@@ -1557,3 +1557,62 @@ export function invalidateFirefoxCache(file, request, response) {
         response.setHeader('Cache-Control', 'must-understand, no-store');
     }
 }
+
+/**
+ * Generates a fingerprint of a directory based on file metadata (mtime and size).
+ * This is much faster than hashing file contents.
+ */
+export function getDirectorySignature(dirPath) {
+    // Check if directory exists
+    if (!fs.existsSync(dirPath)) return '';
+
+    // Recursively get all files in the directory
+    const files = fs.readdirSync(dirPath, { recursive: true });
+    let infoString = '';
+
+    files.forEach(file => {
+        const fullPath = path.join(dirPath, file);
+        const stat = fs.statSync(fullPath);
+
+        if (stat.isFile()) {
+            // Use filename, last modified time, and file size as the signature base
+            infoString += `${file}:${stat.mtimeMs}:${stat.size};`;
+        }
+    });
+
+    // Create a MD5 hash of the signature string
+    return crypto.createHash('md5').update(infoString).digest('hex');
+}
+
+/**
+ * Generates a fingerprint for a single file based on its metadata.
+ * Extremely fast as it doesn't read the actual file content.
+ * * @param {string} filePath - Path to the file.
+ * @returns {Promise<string>} - The MD5 signature or empty string if not found.
+ */
+export async function getFileSignature(filePath) {
+    const fs = await import('fs/promises');
+
+    try {
+        // Check existence and get stats in one go
+        const stat = await fs.stat(filePath);
+
+        if (!stat.isFile()) {
+            return '';
+        }
+
+        // Combine metadata: Size and Last Modified Time
+        // For most cases, this is enough to detect a change
+        const fileInfo = `${filePath}:${stat.mtimeMs}:${stat.size}`;
+
+        // Create a fast MD5 hash
+        return crypto.createHash('md5').update(fileInfo).digest('hex');
+    } catch (err) {
+        if (err.code === 'ENOENT') {
+            // File does not exist
+            return '';
+        }
+        console.error(`[Signature] Failed to get signature for ${filePath}:`, err.message);
+        throw err;
+    }
+}

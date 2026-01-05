@@ -1,6 +1,9 @@
-import path from 'node:path';
 import webpack from 'webpack';
 import getPublicLibConfig from '../../webpack.config.js';
+import { serverDirectory } from '../server-directory.js';
+import path from 'node:path';
+import { getFileSignature } from '../util.js';
+import * as fs from 'fs/promises';
 
 export default function getWebpackServeMiddleware() {
     /**
@@ -29,11 +32,28 @@ export default function getWebpackServeMiddleware() {
      * @param {boolean} [param.forceDist] Whether to force the use the /dist folder.
      * @returns {Promise<void>}
      */
-    devMiddleware.runWebpackCompiler = ({ forceDist = false } = {}) => {
+    devMiddleware.runWebpackCompiler = async ({ forceDist = false } = {}) => {
+        const publicPath = path.join(serverDirectory, 'public', 'lib.js');
+        const sig = await getFileSignature(publicPath);
+        const sigPath = path.join(globalThis.DATA_ROOT, '.lib-sig');
+
+        try {
+            const data = await fs.readFile(sigPath, 'utf8');
+            if (data.trim() === sig) return;
+            else console.log('lib.js updated, regenerate signature...');
+        } catch (err) {
+            if (err.code !== 'ENOENT') {
+                console.error('[Error] An unexpected error occurred:', err.message);
+                throw err;
+            } else {
+                console.log('Write library signature...');
+            }
+        }
+
         const publicLibConfig = getPublicLibConfig(forceDist);
         const compiler = webpack(publicLibConfig);
 
-        return new Promise((resolve) => {
+        await new Promise(/** @param {function(void): void} resolve */(resolve) => {
             console.log();
             console.log('Compiling frontend libraries...');
             compiler.run((_error, stats) => {
@@ -47,6 +67,7 @@ export default function getWebpackServeMiddleware() {
                 });
             });
         });
+        await fs.writeFile(sigPath, sig);
     };
 
     return devMiddleware;
