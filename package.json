@@ -83,7 +83,7 @@
         "slidetoggle": "^4.0.0",
         "tiktoken": "^1.0.22",
         "url-join": "^5.0.0",
-        "vectra": "^0.2.2",
+        "vectra": "^0.10.1",
         "wavefile": "^11.0.0",
         "write-file-atomic": "^5.0.1",
         "ws": "^8.18.3",
@@ -96,13 +96,17 @@
     },
     "overrides": {
         "vectra": {
-            "openai": "^4.17.0"
+            "openai": "^4.17.0",
+            "undici": "^5.28.4"
         },
         "axios": {
             "follow-redirects": "^1.15.4"
         },
         "node-fetch": {
             "whatwg-url": "^14.0.0"
+        },
+        "madge": {
+            "undici": "^5.28.4"
         }
     },
     "name": "sillytavern",
@@ -126,8 +130,8 @@
         "lint:fix": "eslint \"src/**/*.js\" \"public/**/*.js\" ./*.js --fix",
         "plugins:update": "node plugins update",
         "plugins:install": "node plugins install",
-        "build:node": "node build.js",
-        "build:webpack": "webpack"
+        "build:node": "node ./build/backend.js",
+        "build:html": "node ./build/frontend.js"
     },
     "bin": {
         "sillytavern": "./src/server-global.js"
@@ -169,15 +173,18 @@
         "@types/yargs": "^17.0.33",
         "@types/yauzl": "^2.10.3",
         "babel-loader": "^10.0.0",
-        "depcheck": "^1.4.7",
+        "crypto": "^1.0.1",
         "esbuild": "^0.27.2",
         "esbuild-loader": "^4.4.2",
         "eslint": "^8.57.1",
         "eslint-plugin-jest": "^27.9.0",
         "eslint-plugin-jsdoc": "^48.10.0",
         "eslint-plugin-playwright": "^2.3.0",
+        "glob": "^10.5.0",
         "html-loader": "^5.1.0",
         "html-webpack-plugin": "^5.6.5",
+        "jsdom": "^26.1.0",
+        "madge": "^8.0.0",
         "modclean": "^3.0.0-beta.1",
         "webpack": "^5.104.1",
         "webpack-cli": "^6.0.1"

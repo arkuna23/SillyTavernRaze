@@ -4,6 +4,7 @@ import util from 'node:util';
 import net from 'node:net';
 import dns from 'node:dns';
 import process from 'node:process';
+import fs from 'node:fs/promises';
 
 import cors from 'cors';
 import { csrfSync } from 'csrf-sync';
@@ -212,7 +213,31 @@ app.get('/callback/:source?', (request, response) => {
 // Host login page
 app.get('/login', loginPageMiddleware);
 
-app.use(express.static(path.join(serverDirectory, 'public', 'dist'), {}));
+let staticPath = path.join(serverDirectory, 'dist', 'public');
+
+
+try {
+    await fs.stat(staticPath);
+} catch {
+    staticPath = path.join(serverDirectory, 'public');
+}
+app.use(express.static(staticPath, {
+    setHeaders: (res, filePath) => {
+        const ext = path.extname(filePath);
+
+        // HTML files: no cache
+        if (ext === '.html') {
+            res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+            res.setHeader('Pragma', 'no-cache');
+            res.setHeader('Expires', '0');
+        }
+
+        // All other files: cache forever (1 year)
+        else {
+            res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+        }
+    },
+}));
 
 // Public API
 app.use('/api/users', usersPublicRouter);
