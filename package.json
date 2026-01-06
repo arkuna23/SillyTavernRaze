@@ -85,7 +85,6 @@
         "url-join": "^5.0.0",
         "vectra": "^0.2.2",
         "wavefile": "^11.0.0",
-        "webpack": "^5.98.0",
         "write-file-atomic": "^5.0.1",
         "ws": "^8.18.3",
         "yaml": "^2.8.1",
@@ -127,7 +126,8 @@
         "lint:fix": "eslint \"src/**/*.js\" \"public/**/*.js\" ./*.js --fix",
         "plugins:update": "node plugins update",
         "plugins:install": "node plugins install",
-        "build:node": "node build.js"
+        "build:node": "node build.js",
+        "build:webpack": "webpack"
     },
     "bin": {
         "sillytavern": "./src/server-global.js"
@@ -138,6 +138,8 @@
     },
     "main": "server.js",
     "devDependencies": {
+        "@babel/core": "^7.28.5",
+        "@babel/preset-env": "^7.28.5",
         "@chevrotain/types": "^11.0.3",
         "@types/archiver": "^6.0.3",
         "@types/bytes": "^3.1.5",
@@ -165,12 +167,17 @@
         "@types/write-file-atomic": "^4.0.3",
         "@types/yargs": "^17.0.33",
         "@types/yauzl": "^2.10.3",
+        "babel-loader": "^10.0.0",
         "depcheck": "^1.4.7",
         "esbuild": "^0.27.2",
         "eslint": "^8.57.1",
         "eslint-plugin-jest": "^27.9.0",
         "eslint-plugin-jsdoc": "^48.10.0",
         "eslint-plugin-playwright": "^2.3.0",
-        "modclean": "^3.0.0-beta.1"
+        "html-loader": "^5.1.0",
+        "html-webpack-plugin": "^5.6.5",
+        "modclean": "^3.0.0-beta.1",
+        "webpack": "^5.104.1",
+        "webpack-cli": "^6.0.1"
     }
 }

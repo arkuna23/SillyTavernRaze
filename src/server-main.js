@@ -38,7 +38,6 @@ import {
     loginPageMiddleware,
 } from './users.js';
 
-import getWebpackServeMiddleware from './middleware/webpack-serve.js';
 import basicAuthMiddleware from './middleware/basicAuth.js';
 import getWhitelistMiddleware from './middleware/whitelist.js';
 import accessLoggerMiddleware, { getAccessLogPath, migrateAccessLog } from './middleware/accessLogWriter.js';
@@ -213,10 +212,7 @@ app.get('/callback/:source?', (request, response) => {
 // Host login page
 app.get('/login', loginPageMiddleware);
 
-// Host frontend assets
-const webpackMiddleware = getWebpackServeMiddleware();
-app.use(webpackMiddleware);
-app.use(express.static(path.join(serverDirectory, 'public'), {}));
+app.use(express.static(path.join(serverDirectory, 'public', 'dist'), {}));
 
 // Public API
 app.use('/api/users', usersPublicRouter);
@@ -305,8 +301,6 @@ async function preSetupTasks() {
     // Add request proxy.
     initRequestProxy({ enabled: cliArgs.requestProxyEnabled, url: cliArgs.requestProxyUrl, bypass: cliArgs.requestProxyBypass });
 
-    // Wait for frontend libs to compile
-    await webpackMiddleware.runWebpackCompiler();
 }
 
 /**
