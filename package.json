@@ -139,6 +139,7 @@
     "main": "server.js",
     "devDependencies": {
         "@babel/core": "^7.28.5",
+        "@babel/plugin-syntax-top-level-await": "^7.14.5",
         "@babel/preset-env": "^7.28.5",
         "@chevrotain/types": "^11.0.3",
         "@types/archiver": "^6.0.3",
@@ -170,6 +171,7 @@
         "babel-loader": "^10.0.0",
         "depcheck": "^1.4.7",
         "esbuild": "^0.27.2",
+        "esbuild-loader": "^4.4.2",
         "eslint": "^8.57.1",
         "eslint-plugin-jest": "^27.9.0",
         "eslint-plugin-jsdoc": "^48.10.0",
