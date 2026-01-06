@@ -126,7 +126,8 @@
         "lint": "eslint \"src/**/*.js\" \"public/**/*.js\" ./*.js",
         "lint:fix": "eslint \"src/**/*.js\" \"public/**/*.js\" ./*.js --fix",
         "plugins:update": "node plugins update",
-        "plugins:install": "node plugins install"
+        "plugins:install": "node plugins install",
+        "build:node": "node build.js"
     },
     "bin": {
         "sillytavern": "./src/server-global.js"
@@ -164,10 +165,12 @@
         "@types/write-file-atomic": "^4.0.3",
         "@types/yargs": "^17.0.33",
         "@types/yauzl": "^2.10.3",
+        "depcheck": "^1.4.7",
         "esbuild": "^0.27.2",
         "eslint": "^8.57.1",
         "eslint-plugin-jest": "^27.9.0",
         "eslint-plugin-jsdoc": "^48.10.0",
-        "eslint-plugin-playwright": "^2.3.0"
+        "eslint-plugin-playwright": "^2.3.0",
+        "modclean": "^3.0.0-beta.1"
     }
 }
