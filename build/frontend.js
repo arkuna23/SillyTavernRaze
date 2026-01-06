@@ -1,22 +1,20 @@
 import fs from 'fs';
 import path from 'path';
-import crypto from 'crypto';
 import { fileURLToPath } from 'url';
 import { glob } from 'glob';
 import * as esbuild from 'esbuild';
-import { JSDOM } from 'jsdom';
+import webpack from 'webpack';
+import getWebpackConfig from '../webpack.config.js';
 
+const webpackConfig = getWebpackConfig();
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 const publicDir = path.resolve(__dirname, '..', 'public');
 const distDir = path.resolve(__dirname, '..', 'dist', 'public');
 
-// Generate hash for file content
-function generateHash(content, length = 8) {
-    return crypto.createHash('md5').update(content).digest('hex').substring(0, length);
-}
-
-// Ensure directory exists
+/**
+ * Ensure directory exists for a file path
+ */
 function ensureDir(filePath) {
     const dir = path.dirname(filePath);
     if (!fs.existsSync(dir)) {
@@ -24,125 +22,91 @@ function ensureDir(filePath) {
     }
 }
 
-// Copy and hash static files
-async function processStaticFiles() {
-    const staticFiles = await glob('**/*.{png,jpg,jpeg,gif,svg,ico,woff,woff2,ttf,eot}', {
-        cwd: publicDir,
-        nodir: true,
+/**
+ * Process lib.js using Webpack
+ */
+async function processWebpackLib() {
+    return new Promise((resolve, reject) => {
+        console.log('📦 Running Webpack to bundle lib.js...');
+
+        const compiler = webpack(webpackConfig);
+
+        compiler.run((err, stats) => {
+            if (err) return reject(err);
+
+            if (stats?.hasErrors()) {
+                const info = stats.toJson();
+                return reject(new Error(info.errors?.map(e => e.message).join('\n')));
+            }
+
+            compiler.close(() => resolve());
+        });
     });
-
-    const fileMap = {};
-
-    for (const file of staticFiles) {
-        const sourcePath = path.join(publicDir, file);
-        const content = fs.readFileSync(sourcePath);
-        const hash = generateHash(content);
-
-        const ext = path.extname(file);
-        const name = path.basename(file, ext);
-        const dir = path.dirname(file);
-
-        const hashedName = `${name}.${hash}${ext}`;
-        const hashedPath = path.join(dir, hashedName);
-        const destPath = path.join(distDir, hashedPath);
-
-        ensureDir(destPath);
-        fs.copyFileSync(sourcePath, destPath);
-
-        fileMap[file] = hashedPath;
-        console.log(`✓ Copied: ${file} → ${hashedPath}`);
-    }
-
-    return fileMap;
 }
 
-// Process CSS files
+/**
+ * Process CSS files - minify and copy
+ */
 async function processCSSFiles() {
     const cssFiles = await glob('**/*.css', {
         cwd: publicDir,
         nodir: true,
     });
 
-    const fileMap = {};
-
     for (const file of cssFiles) {
         const sourcePath = path.join(publicDir, file);
         let content = fs.readFileSync(sourcePath, 'utf-8');
 
-        // Simple CSS minification
+        // Simple minification
         content = content
             .replace(/\/\*[\s\S]*?\*\//g, '')
             .replace(/\s+/g, ' ')
             .replace(/\s*([{}:;,])\s*/g, '$1')
             .trim();
 
-        const hash = generateHash(content);
-        const ext = path.extname(file);
-        const name = path.basename(file, ext);
-        const dir = path.dirname(file);
-
-        const hashedName = `${name}.${hash}${ext}`;
-        const hashedPath = path.join(dir, hashedName);
-        const destPath = path.join(distDir, hashedPath);
-
+        const destPath = path.join(distDir, file);
         ensureDir(destPath);
         fs.writeFileSync(destPath, content);
 
-        fileMap[file] = hashedPath;
-        console.log(`✓ Minified CSS: ${file} → ${hashedPath}`);
+        console.log(`✓ Minified CSS: ${file}`);
     }
-
-    return fileMap;
 }
 
-// Process JavaScript files
+/**
+ * Process JS files using esbuild - minify and copy
+ */
 async function processJSFiles() {
     const jsFiles = await glob('**/*.{js,mjs}', {
         cwd: publicDir,
+        ignore: ['lib.js'], // Handled by Webpack
         nodir: true,
     });
 
-    const fileMap = {};
-
     for (const file of jsFiles) {
         const sourcePath = path.join(publicDir, file);
+        const destPath = path.join(distDir, file);
 
         try {
-            const result = await esbuild.build({
+            await esbuild.build({
                 entryPoints: [sourcePath],
+                outfile: destPath,
                 bundle: false,
                 minify: true,
                 target: 'es2022',
                 format: 'esm',
-                write: false,
             });
 
-            const content = result.outputFiles[0].text;
-            const hash = generateHash(content);
-
-            const ext = path.extname(file);
-            const name = path.basename(file, ext);
-            const dir = path.dirname(file);
-
-            const hashedName = `${name}.${hash}${ext}`;
-            const hashedPath = path.join(dir, hashedName);
-            const destPath = path.join(distDir, hashedPath);
-
-            ensureDir(destPath);
-            fs.writeFileSync(destPath, content);
-
-            fileMap[file] = hashedPath;
-            console.log(`✓ Minified JS: ${file} → ${hashedPath}`);
+            console.log(`✓ Processed JS: ${file}`);
         } catch (error) {
             console.error(`✗ Error processing ${file}:`, error.message);
         }
     }
-
-    return fileMap;
 }
 
-// Process HTML files using jsdom
-async function processHTMLFiles(fileMap) {
+/**
+ * Copy HTML files
+ */
+async function processHTMLFiles() {
     const htmlFiles = await glob('**/*.html', {
         cwd: publicDir,
         nodir: true,
@@ -150,86 +114,62 @@ async function processHTMLFiles(fileMap) {
 
     for (const file of htmlFiles) {
         const sourcePath = path.join(publicDir, file);
-        const html = fs.readFileSync(sourcePath, 'utf-8');
-        const dom = new JSDOM(html);
-        const document = dom.window.document;
-
-        // Update script tags
-        document.querySelectorAll('script[src]').forEach(element => {
-            const src = element.getAttribute('src');
-            if (src && !src.startsWith('http') && !src.startsWith('//')) {
-                const normalizedSrc = src.startsWith('/') ? src.substring(1) : src;
-                const resolvedPath = path.normalize(path.join(path.dirname(file), normalizedSrc)).replace(/\\/g, '/');
-
-                if (fileMap[resolvedPath]) {
-                    const newSrc = path.relative(path.dirname(file), fileMap[resolvedPath]).replace(/\\/g, '/');
-                    element.setAttribute('src', newSrc.startsWith('.') ? newSrc : './' + newSrc);
-                    console.log(`  Updated script: ${src} → ${newSrc}`);
-                }
-            }
-        });
-
-        // Update link tags
-        document.querySelectorAll('link[href]').forEach(element => {
-            const href = element.getAttribute('href');
-            if (href && !href.startsWith('http') && !href.startsWith('//')) {
-                const normalizedHref = href.startsWith('/') ? href.substring(1) : href;
-                const resolvedPath = path.normalize(path.join(path.dirname(file), normalizedHref)).replace(/\\/g, '/');
-
-                if (fileMap[resolvedPath]) {
-                    const newHref = path.relative(path.dirname(file), fileMap[resolvedPath]).replace(/\\/g, '/');
-                    element.setAttribute('href', newHref.startsWith('.') ? newHref : './' + newHref);
-                    console.log(`  Updated link: ${href} → ${newHref}`);
-                }
-            }
-        });
-
-        // Update img tags
-        document.querySelectorAll('img[src]').forEach(element => {
-            const src = element.getAttribute('src');
-            if (src && !src.startsWith('http') && !src.startsWith('//') && !src.startsWith('data:')) {
-                const normalizedSrc = src.startsWith('/') ? src.substring(1) : src;
-                const resolvedPath = path.normalize(path.join(path.dirname(file), normalizedSrc)).replace(/\\/g, '/');
-
-                if (fileMap[resolvedPath]) {
-                    const newSrc = path.relative(path.dirname(file), fileMap[resolvedPath]).replace(/\\/g, '/');
-                    element.setAttribute('src', newSrc.startsWith('.') ? newSrc : './' + newSrc);
-                    console.log(`  Updated img: ${src} → ${newSrc}`);
-                }
-            }
-        });
-
-        // Save updated HTML
         const destPath = path.join(distDir, file);
+
         ensureDir(destPath);
-        fs.writeFileSync(destPath, dom.serialize());
-        console.log(`✓ Processed HTML: ${file}`);
+        fs.copyFileSync(sourcePath, destPath);
+
+        console.log(`✓ Copied HTML: ${file}`);
     }
 }
 
-// Main build function
+/**
+ * Copy static files (images, fonts, etc.)
+ */
+async function processStaticFiles() {
+    const staticFiles = await glob('**/*.{png,jpg,jpeg,gif,svg,ico,woff,woff2,ttf,eot,mp3,wav,json}', {
+        cwd: publicDir,
+        nodir: true,
+    });
+
+    for (const file of staticFiles) {
+        const sourcePath = path.join(publicDir, file);
+        const destPath = path.join(distDir, file);
+
+        ensureDir(destPath);
+        fs.copyFileSync(sourcePath, destPath);
+
+        console.log(`✓ Copied static file: ${file}`);
+    }
+}
+
+/**
+ * Main build orchestration
+ */
 async function build() {
     console.log('🚀 Starting build process...\n');
 
+    // Clean dist directory
     if (fs.existsSync(distDir)) {
         fs.rmSync(distDir, { recursive: true });
     }
     fs.mkdirSync(distDir, { recursive: true });
 
     try {
-        console.log('📦 Processing static files...');
-        const staticMap = await processStaticFiles();
+        // Run Webpack for lib.js
+        await processWebpackLib();
+
+        console.log('\n📦 Processing static files...');
+        await processStaticFiles();
 
         console.log('\n🎨 Processing CSS files...');
-        const cssMap = await processCSSFiles();
+        await processCSSFiles();
 
-        console.log('\n⚡ Processing JavaScript files...');
-        const jsMap = await processJSFiles();
-
-        const fileMap = { ...staticMap, ...cssMap, ...jsMap };
+        console.log('\n⚡ Processing JS files...');
+        await processJSFiles();
 
         console.log('\n📝 Processing HTML files...');
-        await processHTMLFiles(fileMap);
+        await processHTMLFiles();
 
         console.log('\n✅ Build completed successfully!');
         console.log(`📂 Output directory: ${distDir}`);

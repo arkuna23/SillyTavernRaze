@@ -1,3 +1,5 @@
-import path from 'node:path';
-import { fileURLToPath } from 'node:url';
-export const serverDirectory = path.dirname(import.meta.dirname ?? path.dirname(fileURLToPath(import.meta.url)));
+import { dirname } from 'path';
+import { packageDirectory } from 'pkg-dir';
+
+
+export const serverDirectory = await packageDirectory() ?? dirname(import.meta.dirname);

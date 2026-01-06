@@ -3,7 +3,7 @@
  * @param {number} ttl - Time to live in milliseconds (default: 20 seconds).
  * @returns {Function} - A function to restore the original fetch.
  */
-export function enableFetchCaching(ttl = 20 * 1000) {
+function enableFetchCaching(ttl = 20 * 1000) {
     // 1. Store the original fetch function to prevent infinite recursion
     const originalFetch = window.fetch;
 

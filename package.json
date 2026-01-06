@@ -70,6 +70,7 @@
         "node-fetch": "^3.3.2",
         "node-persist": "^4.0.4",
         "open": "^10.2.0",
+        "pkg-dir": "^8.0.0",
         "png-chunk-text": "^1.0.0",
         "png-chunks-extract": "^1.0.0",
         "proxy-agent": "^6.5.0",
@@ -85,6 +86,7 @@
         "url-join": "^5.0.0",
         "vectra": "^0.10.1",
         "wavefile": "^11.0.0",
+        "wink-bm25-text-search": "^3.1.2",
         "write-file-atomic": "^5.0.1",
         "ws": "^8.18.3",
         "yaml": "^2.8.1",
@@ -131,7 +133,8 @@
         "plugins:update": "node plugins update",
         "plugins:install": "node plugins install",
         "build:node": "node ./build/backend.js",
-        "build:html": "node ./build/frontend.js"
+        "build:html": "NODE_ENV=development node ./build/frontend.js",
+        "build": "NODE_ENV=development node ./build/build.js"
     },
     "bin": {
         "sillytavern": "./src/server-global.js"

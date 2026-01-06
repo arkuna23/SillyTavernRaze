@@ -1,109 +1,74 @@
-import path from 'path';
-import fs from 'fs';
-import { fileURLToPath } from 'url';
-import HtmlWebpackPlugin from 'html-webpack-plugin';
-import { EsbuildPlugin } from 'esbuild-loader';
+import process from 'node:process';
+import path from 'node:path';
+import isDocker from 'is-docker';
+import webpack from 'webpack';
+import { serverDirectory } from './src/server-directory.js';
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
+/**
+ * Get the Webpack configuration for the public/lib.js file.
+ * 1. Docker has got cache and the output file pre-baked.
+ * 2. Non-Docker environments use the global DATA_ROOT variable to determine the cache and output directories.
+ * @param {boolean} forceDist Whether to force the use the /dist folder.
+ * @returns {import('webpack').Configuration}
+ * @throws {Error} If the DATA_ROOT variable is not set.
+ * */
+export default function getPublicLibConfig(forceDist = false) {
+    function getCacheDirectory() {
+        if (forceDist || isDocker()) {
+            return path.resolve(process.cwd(), 'dist', '_webpack', webpack.version, 'cache');
+        }
 
-// Get all HTML files from the public folder
-const publicDir = path.resolve(__dirname, 'public');
-const htmlFiles = fs.readdirSync(publicDir).filter(file => file.endsWith('.html'));
+        if (typeof globalThis.DATA_ROOT === 'string') {
+            return path.resolve(globalThis.DATA_ROOT, '_webpack', webpack.version, 'cache');
+        }
 
-export default {
-    context: publicDir,
-    entry: path.resolve(publicDir, 'index.js'),
-    mode: 'production',
+        throw new Error('DATA_ROOT variable is not set.');
+    }
 
-    // Set target to support modern JavaScript features including top-level await
-    target: ['web', 'es2022'],
+    function getOutputDirectory() {
+        if (forceDist || isDocker()) {
+            return path.resolve(process.cwd(), 'dist', '_webpack', webpack.version, 'output');
+        }
 
-    output: {
-        path: path.resolve(__dirname, 'public/dist'),
-        filename: 'js/[name].[contenthash:8].js',
-        clean: true, // Automatically clean the dist folder before building
-        module: true, // Use ES module output format instead of iife
-        chunkFormat: 'module', // Use module chunk format
-        library: {
-            type: 'module', // Output as ES module
+        if (typeof globalThis.DATA_ROOT === 'string') {
+            return path.resolve(globalThis.DATA_ROOT, '_webpack', webpack.version, 'output');
+        }
+
+        throw new Error('DATA_ROOT variable is not set.');
+    }
+
+    const cacheDirectory = path.join(serverDirectory, 'dist', '_webpack');
+    const outputDirectory = path.join(serverDirectory, 'dist', 'public');
+
+    return {
+        mode: 'production',
+        entry: path.join(serverDirectory, 'public/lib.js'),
+        cache: {
+            type: 'filesystem',
+            cacheDirectory: cacheDirectory,
+            store: 'pack',
+            compression: 'gzip',
         },
-        environment: {
-            module: true,
-            dynamicImport: true,
+        devtool: false,
+        watch: false,
+        module: {},
+        stats: {
+            preset: 'minimal',
+            assets: false,
+            modules: false,
+            colors: true,
+            timings: true,
         },
-    },
-
-    // Enable top-level await and output as ES modules
-    experiments: {
-        topLevelAwait: true,
-        outputModule: true, // Enable ES module output
-    },
-
-    resolveLoader: {
-        modules: [path.resolve(__dirname, 'node_modules')],
-    },
-
-    module: {
-        rules: [
-            {
-                test: /\.html$/i,
-                loader: 'html-loader',
-                options: {
-                    // Process <script src="..."> and <link href="..."> tags in HTML
-                    sources: {
-                        list: [
-                            { tag: 'link', attribute: 'href', type: 'src' },
-                            { tag: 'script', attribute: 'src', type: 'src' },
-                        ],
-                    },
-                },
-            },
-            {
-                test: /\.m?js$/i, // Supports both .js and .mjs files
-                exclude: /node_modules/,
-                use: {
-                    loader: 'babel-loader',
-                    options: {
-                        presets: [
-                            [
-                                '@babel/preset-env',
-                                {
-                                    targets: '> 0.25%, not dead',
-                                    modules: false, // Let webpack handle module transformation
-                                    useBuiltIns: 'usage',
-                                    corejs: 3,
-                                },
-                            ],
-                        ],
-                        plugins: [
-                            '@babel/plugin-syntax-top-level-await', // Support top-level await syntax
-                        ],
-                    },
-                },
-            },
-        ],
-    },
-
-    optimization: {
-        minimize: true,
-        minimizer: [
-            new EsbuildPlugin({
-                target: 'es2022', // Match the webpack target to support top-level await
-                css: true,
-                format: 'esm', // Output as ES module format
-            }),
-        ],
-    },
-
-    plugins: [
-        // Dynamically create HtmlWebpackPlugin instances for each HTML file
-        ...htmlFiles.map(file =>
-            new HtmlWebpackPlugin({
-                template: path.join(publicDir, file),
-                filename: file, // Keep the same filename in public/dist
-                inject: 'body', // Inject JS at the end of the body
-                scriptLoading: 'module', // Use <script type="module"> for injected scripts
-            }),
-        ),
-    ],
-};
+        experiments: {
+            outputModule: true,
+        },
+        performance: {
+            hints: false,
+        },
+        output: {
+            path: outputDirectory,
+            filename: 'lib.js',
+            libraryTarget: 'module',
+        },
+    };
+}

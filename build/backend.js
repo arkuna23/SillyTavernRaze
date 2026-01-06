@@ -25,7 +25,17 @@ async function getDependencies() {
         external: ['wink-*'],
     });
 
-    const dependencies = new Set();
+    const dependencies = new Set([
+        'wink-bm25-text-search',
+        'wink-distance',
+        'wink-eng-lite-web-model',
+        'wink-helpers',
+        'wink-jaro-distance',
+        'wink-nlp',
+        'wink-nlp-utils',
+        'wink-porter2-stemmer',
+        'wink-tokenizer',
+    ]);
     const inputs = result.metafile.inputs;
 
     Object.keys(inputs).forEach(filePath => {
@@ -36,8 +46,7 @@ async function getDependencies() {
         }
     });
 
-    dependencies.add('wink-nlp');
-    fs.mkdirSync(path.join(PROJECT_ROOT, 'dist'));
+    fs.mkdirSync(path.join(PROJECT_ROOT, 'dist'), { recursive: true });
     fs.writeFileSync(path.join(PROJECT_ROOT, 'dist', 'metafile.json'), JSON.stringify(result.metafile));
     return Array.from(dependencies);
 }
@@ -117,9 +126,11 @@ export async function build() {
     console.log('🧹 Running Modclean optimization...');
     const cleaner = modclean({
         cwd: distNM,
-        patterns: ['default:safe', 'default:caution'],
         removeEmptyDirs: true,
         recursive: true,
+        ignorePatterns: [
+            '**/examples-compiler.js',
+        ],
     });
 
     try {
