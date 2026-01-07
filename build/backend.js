@@ -11,6 +11,10 @@ const PROJECT_ROOT = path.resolve(dirname(__filename), "..");
 const isProd = process.env.NODE_ENV === "production";
 const NODE_VERSION = "v18.18.2";
 
+const rootPkgPath = join(PROJECT_ROOT, "package.json");
+const rootPkg = JSON.parse(fs.readFileSync(rootPkgPath, "utf-8"));
+const PROJECT_VERSION = rootPkg.version || "1.0.0";
+
 /**
  * Downloads and extracts the Node executable.
  * Stores all caches (download and decompression) in dist/_node.
@@ -217,8 +221,10 @@ async function build() {
     }
 
     // 5.5 Generate minimal package.json in dist
-    console.log(">> Generating dist/package.json...");
+    console.log(`>> Generating dist/package.json (v${PROJECT_VERSION})...`);
     const minimalPkg = {
+        name: rootPkg.name || "portable-app", // 建议同时保留名称
+        version: PROJECT_VERSION, // 设定为项目的版本号
         type: "module",
     };
     fs.writeFileSync(

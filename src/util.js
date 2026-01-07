@@ -167,9 +167,9 @@ export async function getVersion() {
     }
 
     let pkgVersion = "UNKNOWN";
-    let gitRevision = null;
-    let gitBranch = null;
-    let commitDate = null;
+    let gitRevision = "UNKNOWN";
+    let gitBranch = "UNKNOWN";
+    let commitDate = "UNKNOWN";
     let isLatest = true;
 
     try {
