@@ -134,7 +134,7 @@
         "plugins:install": "node plugins install",
         "build:node": "node ./build/backend.js",
         "build:html": "node ./build/frontend.js",
-        "build:bun": "bun ./build/build.js"
+        "build:dist": "node ./build/build.js"
     },
     "bin": {
         "sillytavern": "./src/server-global.js"

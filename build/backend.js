@@ -1,52 +1,239 @@
-/* global Bun */
+import esbuild from "esbuild";
+import { fileURLToPath } from "url";
+import path, { dirname, join } from "path";
+import fs from "fs";
+import modclean from "modclean";
+import { execSync } from "child_process";
 
-import { serverDirectory } from '../src/server-directory.js';
-import path from 'node:path';
+// --- Configuration & Helpers ---
+const __filename = fileURLToPath(import.meta.url);
+const PROJECT_ROOT = path.resolve(dirname(__filename), "..");
+const isProd = process.env.NODE_ENV === "production";
+const NODE_VERSION = "v18.18.2";
 
-const DIST_DIR = path.join(serverDirectory, 'dist');
-const SERVER_ENTRY = path.join(serverDirectory, 'server.js');
-const SERVER_BIN = path.join(DIST_DIR, 'server');
-const GENERATED_PKG_PATH = path.join(DIST_DIR, 'package.json');
+/**
+ * Downloads and extracts the Node executable.
+ * Stores all caches (download and decompression) in dist/_node.
+ */
+async function setupNodeRuntime(distDir) {
+    const platform = process.platform;
+    const arch = process.arch;
 
-try {
-    console.log('📦 Compiling server...');
+    // Everything related to node download/extraction goes here
+    const nodeCacheDir = join(distDir, "_node");
+    const finalNodeFile =
+        platform === "win32"
+            ? join(distDir, "node.exe")
+            : join(distDir, "node");
 
-    // 1. Use Bun Native API with compile option
-    await Bun.build({
-        entrypoints: [SERVER_ENTRY],
-        minify: true,
-        sourcemap: 'external', // "external" is usually better for binaries than "true" (inline)
-        compile: true,         // Using the compile option as requested
-        outdir: DIST_DIR,
-        // Ensure the binary is named 'server' (without .js extension)
-        naming: 'server',
+    if (fs.existsSync(finalNodeFile)) {
+        console.log(
+            ">> Node executable already exists, skipping runtime setup.",
+        );
+        return;
+    }
+
+    let archiveName = "";
+    let downloadUrl = "";
+    if (platform === "win32") {
+        archiveName = `node-${NODE_VERSION}-win-${arch}.zip`;
+        downloadUrl = `https://nodejs.org/dist/${NODE_VERSION}/${archiveName}`;
+    } else {
+        const osMap = { darwin: "darwin", linux: "linux" };
+        const osName = osMap[platform] || "linux";
+        archiveName = `node-${NODE_VERSION}-${osName}-${arch}.tar.gz`;
+        downloadUrl = `https://nodejs.org/dist/${NODE_VERSION}/${archiveName}`;
+    }
+
+    if (!fs.existsSync(nodeCacheDir))
+        fs.mkdirSync(nodeCacheDir, { recursive: true });
+    const cachedArchivePath = join(nodeCacheDir, archiveName);
+
+    // 1. Download if not in dist/_node
+    if (!fs.existsSync(cachedArchivePath)) {
+        console.log(
+            `>> Downloading Node.js ${NODE_VERSION} to ${nodeCacheDir}...`,
+        );
+        if (platform === "win32") {
+            execSync(
+                `powershell -Command "Invoke-WebRequest -Uri '${downloadUrl}' -OutFile '${cachedArchivePath}'"`,
+                { stdio: "inherit" },
+            );
+        } else {
+            try {
+                execSync(`curl -L "${downloadUrl}" -o "${cachedArchivePath}"`, {
+                    stdio: "inherit",
+                });
+            } catch (e) {
+                execSync(`wget "${downloadUrl}" -O "${cachedArchivePath}"`, {
+                    stdio: "inherit",
+                });
+            }
+        }
+    }
+
+    // 2. Extract into dist/_node
+    console.log(`>> Extracting runtime in ${nodeCacheDir}...`);
+    if (platform === "win32") {
+        execSync(
+            `powershell -Command "Expand-Archive -Path '${cachedArchivePath}' -DestinationPath '${nodeCacheDir}' -Force"`,
+            { stdio: "inherit" },
+        );
+    } else {
+        execSync(`tar -xzf "${cachedArchivePath}" -C "${nodeCacheDir}"`, {
+            stdio: "inherit",
+        });
+    }
+
+    // 3. Locate and move only the binary
+    const extractedRoot = fs
+        .readdirSync(nodeCacheDir)
+        .find(
+            (f) =>
+                f.startsWith("node-") &&
+                fs.statSync(join(nodeCacheDir, f)).isDirectory(),
+        );
+    const sourceExecPath =
+        platform === "win32"
+            ? join(nodeCacheDir, extractedRoot, "node.exe")
+            : join(nodeCacheDir, extractedRoot, "bin", "node");
+
+    if (fs.existsSync(sourceExecPath)) {
+        fs.copyFileSync(sourceExecPath, finalNodeFile);
+        if (platform !== "win32") fs.chmodSync(finalNodeFile, "755");
+    }
+
+    // 4. Cleanup extracted folder but keep the archive cache
+    fs.rmSync(join(nodeCacheDir, extractedRoot), {
+        recursive: true,
+        force: true,
+    });
+    console.log(">> Runtime binary positioned in dist root.");
+}
+
+function copyRecursive(src, dest) {
+    if (!fs.existsSync(src)) return;
+    const stats = fs.lstatSync(src);
+    if (stats.isDirectory()) {
+        if (!fs.existsSync(dest)) fs.mkdirSync(dest, { recursive: true });
+        fs.readdirSync(src).forEach((file) =>
+            copyRecursive(join(src, file), join(dest, file)),
+        );
+    } else {
+        fs.copyFileSync(src, dest);
+    }
+}
+
+async function build() {
+    console.log("--- Starting Portable Build Process ---");
+
+    const distDir = join(PROJECT_ROOT, "dist");
+    const distNM = join(distDir, "node_modules");
+
+    // Ensure dist exists
+    if (!fs.existsSync(distDir)) fs.mkdirSync(distDir, { recursive: true });
+
+    // 1. Runtime Setup
+    await setupNodeRuntime(distDir);
+
+    // 2. Dependency Analysis
+    const analysis = await esbuild.build({
+        entryPoints: ["server.js"],
+        bundle: true,
+        platform: "node",
+        target: "node18",
+        metafile: true,
+        format: "esm",
+        write: false,
+        external: ["wink-*"],
     });
 
-    console.log(`✅ Binary created at: ${SERVER_BIN}`);
+    const dependencies = new Set([
+        "wink-bm25-text-search",
+        "wink-distance",
+        "wink-eng-lite-web-model",
+        "wink-helpers",
+        "wink-jaro-distance",
+        "wink-nlp",
+        "wink-nlp-utils",
+        "wink-porter2-stemmer",
+        "wink-tokenizer",
+    ]);
 
-    // 2. Generate a basic package.json (No complex analysis)
-    console.log('📝 Generating basic package.json...');
+    Object.keys(analysis.metafile.inputs).forEach((filePath) => {
+        if (filePath.includes("node_modules")) {
+            const match = filePath.match(/node_modules\/((?:@[^/]+\/)?[^/]+)/);
+            if (match) dependencies.add(match[1]);
+        }
+    });
 
-    const basicPackageJson = {
-        name: 'sillytavern',
-        version: '1.0.0',
-        description: 'Standalone server build',
-        type: 'module',
-        private: true,
-        scripts: {
-            'start': './server',
-        },
-    };
+    // 3. Bundle App
+    console.log(">> Bundling application...");
+    await esbuild.build({
+        entryPoints: ["server.js"],
+        bundle: true,
+        platform: "node",
+        target: "node18",
+        format: "esm",
+        outfile: join(distDir, "app.js"),
+        sourcemap: !isProd,
+        minify: isProd,
+        treeShaking: true,
+        packages: "external",
+    });
 
-    await Bun.write(GENERATED_PKG_PATH, JSON.stringify(basicPackageJson, null, 2));
+    // 4. Physical Copy (Fix: Ensure directory exists BEFORE modclean)
+    console.log(`>> Copying ${dependencies.size} modules...`);
+    if (!fs.existsSync(distNM)) fs.mkdirSync(distNM, { recursive: true });
 
-    console.log(`✅ Generated ${GENERATED_PKG_PATH}`);
+    dependencies.forEach((dep) => {
+        const srcPath = join(PROJECT_ROOT, "node_modules", dep);
+        const destPath = join(distNM, dep);
+        if (fs.existsSync(srcPath)) {
+            if (dep.startsWith("@")) {
+                const scopeDir = dirname(destPath);
+                if (!fs.existsSync(scopeDir))
+                    fs.mkdirSync(scopeDir, { recursive: true });
+            }
+            copyRecursive(srcPath, destPath);
+        }
+    });
 
-} catch (err) {
-    console.error('❌ Build failed:', err);
-    // Print build logs if available in the error object
-    if (err.logs) {
-        for (const log of err.logs) console.error(log);
+    // 5. Cleanup with Modclean (Now directory is guaranteed to exist)
+    if (fs.existsSync(distNM)) {
+        console.log(">> Cleaning node_modules...");
+        const cleaner = modclean({
+            cwd: distNM,
+            removeEmptyDirs: true,
+            recursive: true,
+            ignorePatterns: ["**/examples-compiler.js"],
+        });
+        await cleaner.clean();
     }
-    process.exit(1);
+
+    // 6. Launch Scripts
+    const isWin = process.platform === "win32";
+    const nodeBin = isWin ? "node.exe" : "./node";
+    const command = `"${nodeBin}" --enable-source-maps app.js`;
+
+    if (isWin) {
+        fs.writeFileSync(
+            join(distDir, "start.bat"),
+            `@echo off\nSETLOCAL\ncd /d "%~dp0"\n${command}\npause`,
+        );
+    } else {
+        const shPath = join(distDir, "start.sh");
+        fs.writeFileSync(
+            shPath,
+            `#!/bin/bash\ncd "$(dirname "$0")"\n${command}`,
+        );
+        fs.chmodSync(shPath, "755");
+    }
+
+    console.log("--- Build Complete! ---");
 }
+
+await build().catch((err) => {
+    console.error("!! Fatal Error:", err);
+    process.exit(1);
+});
