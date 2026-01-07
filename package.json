@@ -133,8 +133,8 @@
         "plugins:update": "node plugins update",
         "plugins:install": "node plugins install",
         "build:node": "node ./build/backend.js",
-        "build:html": "NODE_ENV=development node ./build/frontend.js",
-        "build": "NODE_ENV=development node ./build/build.js"
+        "build:html": "node ./build/frontend.js",
+        "build:bun": "bun ./build/build.js"
     },
     "bin": {
         "sillytavern": "./src/server-global.js"
@@ -176,6 +176,7 @@
         "@types/yargs": "^17.0.33",
         "@types/yauzl": "^2.10.3",
         "babel-loader": "^10.0.0",
+        "bun": "^1.3.5",
         "crypto": "^1.0.1",
         "esbuild": "^0.27.2",
         "esbuild-loader": "^4.4.2",

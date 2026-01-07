@@ -1,4 +1,5 @@
-import fs from 'fs';
+import fs from 'node:fs';
+import fsAsync from 'node:fs/promises';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { glob } from 'glob';
@@ -48,7 +49,7 @@ async function processWebpackLib() {
  * Process CSS files - minify and copy
  */
 async function processCSSFiles() {
-    const cssFiles = await glob('**/*.css', {
+    const cssFiles = await glob(['**/*.css', '**/*.less'], {
         cwd: publicDir,
         nodir: true,
     });
@@ -86,6 +87,19 @@ async function processJSFiles() {
         const sourcePath = path.join(publicDir, file);
         const destPath = path.join(distDir, file);
 
+        if (file.includes('jquery') || file.includes('min.js')) {
+            try {
+                await fsAsync.mkdir(path.dirname(destPath), { recursive: true });
+
+                await fsAsync.copyFile(sourcePath, destPath);
+
+                console.log(`✓ Copied raw (jQuery): ${file}`);
+                continue;
+            } catch (error) {
+                console.error(`✗ Error copying ${file}:`, error.message);
+                continue;
+            }
+        }
         try {
             await esbuild.build({
                 entryPoints: [sourcePath],

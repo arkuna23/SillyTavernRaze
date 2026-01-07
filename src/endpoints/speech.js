@@ -1,7 +1,7 @@
 import { Buffer } from 'node:buffer';
 import fs from 'node:fs';
 import express from 'express';
-import wavefile from 'wavefile';
+import { WaveFile } from 'wavefile';
 import fetch from 'node-fetch';
 import FormData from 'form-data';
 import mime from 'mime-types';
@@ -17,7 +17,7 @@ export const router = express.Router();
  * @returns {Float64Array} Audio data
  */
 function getWaveFile(audio) {
-    const wav = new wavefile.WaveFile();
+    const wav = new WaveFile();
     wav.fromDataURI(audio);
     wav.toBitDepth('32f');
     wav.toSampleRate(16000);

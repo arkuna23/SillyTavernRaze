@@ -128,12 +128,18 @@ export function getBasicAuthHeader(auth) {
     return `Basic ${encoded}`;
 }
 
+let _version = undefined;
+
 /**
  * Returns the version of the running instance. Get the version from the package.json file and the git revision.
  * Also returns the agent string for the Horde API.
  * @returns {Promise<{agent: string, pkgVersion: string, gitRevision: string | null, gitBranch: string | null, commitDate: string | null, isLatest: boolean}>} Version info object
  */
 export async function getVersion() {
+    if (_version) {
+        return _version;
+    }
+
     let pkgVersion = 'UNKNOWN';
     let gitRevision = null;
     let gitBranch = null;
@@ -163,7 +169,8 @@ export async function getVersion() {
     }
 
     const agent = `SillyTavern:${pkgVersion}:Cohee#1207`;
-    return { agent, pkgVersion, gitRevision, gitBranch, commitDate: commitDate?.trim() ?? null, isLatest };
+    _version = { agent, pkgVersion, gitRevision, gitBranch, commitDate: commitDate?.trim() ?? null, isLatest };
+    return _version;
 }
 
 /**

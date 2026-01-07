@@ -225,20 +225,19 @@ console.log('static path:', staticPath);
 
 app.use(express.static(staticPath, {
     setHeaders: (res, filePath) => {
-        //const ext = path.extname(filePath);
-        console.log('request', filePath);
+        const ext = path.extname(filePath);
 
         // HTML files: no cache
-        //if (ext === '.html') {
-        //    res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
-        //    res.setHeader('Pragma', 'no-cache');
-        //    res.setHeader('Expires', '0');
-        //}
+        if (ext === '.html') {
+            res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+            res.setHeader('Pragma', 'no-cache');
+            res.setHeader('Expires', '0');
+        }
 
-        //// All other files: cache forever (1 year)
-        //else {
-        //    res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
-        //}
+        // All other files: cache forever (1 year)
+        else {
+            res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+        }
     },
 }));
 

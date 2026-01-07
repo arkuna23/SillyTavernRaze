@@ -3,6 +3,7 @@ import path from 'node:path';
 import isDocker from 'is-docker';
 import webpack from 'webpack';
 import { serverDirectory } from './src/server-directory.js';
+import { EsbuildPlugin } from 'esbuild-loader';
 
 /**
  * Get the Webpack configuration for the public/lib.js file.
@@ -52,6 +53,15 @@ export default function getPublicLibConfig(forceDist = false) {
         devtool: false,
         watch: false,
         module: {},
+        optimization: {
+            minimize: false,
+            minimizer: [
+                new EsbuildPlugin({
+                    target: 'es2015', // 保持与 loader 一致
+                    css: true,         // 开启 CSS 压缩
+                }),
+            ],
+        },
         stats: {
             preset: 'minimal',
             assets: false,

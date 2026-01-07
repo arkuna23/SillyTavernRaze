@@ -1,150 +1,52 @@
-import esbuild from 'esbuild';
-import { fileURLToPath } from 'url';
-import path, { dirname, join } from 'path';
-import fs from 'fs';
-import modclean from 'modclean';
+/* global Bun */
 
-// --- Configuration & Helpers ---
-const __filename = fileURLToPath(import.meta.url);
-// Standardize path to project root
-const PROJECT_ROOT = path.resolve(dirname(__filename), '..');
-const isProd = process.env.NODE_ENV === 'production';
+import { serverDirectory } from '../src/server-directory.js';
+import path from 'node:path';
 
-/**
- * Identify required node_modules by analyzing esbuild metafile
- */
-async function getDependencies() {
-    const result = await esbuild.build({
-        entryPoints: ['server.js'],
-        bundle: true,
-        platform: 'node',
-        target: 'node18',
-        metafile: true,
-        format: 'esm',
-        write: false, // No need to write files for analysis phase
-        external: ['wink-*'],
+const DIST_DIR = path.join(serverDirectory, 'dist');
+const SERVER_ENTRY = path.join(serverDirectory, 'server.js');
+const SERVER_BIN = path.join(DIST_DIR, 'server');
+const GENERATED_PKG_PATH = path.join(DIST_DIR, 'package.json');
+
+try {
+    console.log('📦 Compiling server...');
+
+    // 1. Use Bun Native API with compile option
+    await Bun.build({
+        entrypoints: [SERVER_ENTRY],
+        minify: true,
+        sourcemap: 'external', // "external" is usually better for binaries than "true" (inline)
+        compile: true,         // Using the compile option as requested
+        outdir: DIST_DIR,
+        // Ensure the binary is named 'server' (without .js extension)
+        naming: 'server',
     });
 
-    const dependencies = new Set([
-        'wink-bm25-text-search',
-        'wink-distance',
-        'wink-eng-lite-web-model',
-        'wink-helpers',
-        'wink-jaro-distance',
-        'wink-nlp',
-        'wink-nlp-utils',
-        'wink-porter2-stemmer',
-        'wink-tokenizer',
-    ]);
-    const inputs = result.metafile.inputs;
+    console.log(`✅ Binary created at: ${SERVER_BIN}`);
 
-    Object.keys(inputs).forEach(filePath => {
-        if (filePath.includes('node_modules')) {
-            // Regex to handle both normal and scoped packages (@scope/pkg)
-            const match = filePath.match(/node_modules\/((?:@[^/]+\/)?[^/]+)/);
-            if (match) dependencies.add(match[1]);
-        }
-    });
+    // 2. Generate a basic package.json (No complex analysis)
+    console.log('📝 Generating basic package.json...');
 
-    fs.mkdirSync(path.join(PROJECT_ROOT, 'dist'), { recursive: true });
-    fs.writeFileSync(path.join(PROJECT_ROOT, 'dist', 'metafile.json'), JSON.stringify(result.metafile));
-    return Array.from(dependencies);
-}
-
-/**
- * Deep copy directories or files
- */
-function copyRecursive(src, dest) {
-    if (!fs.existsSync(src)) return;
-
-    const stats = fs.lstatSync(src);
-    if (stats.isDirectory()) {
-        if (!fs.existsSync(dest)) fs.mkdirSync(dest, { recursive: true });
-        fs.readdirSync(src).forEach(file => copyRecursive(join(src, file), join(dest, file)));
-    } else {
-        fs.copyFileSync(src, dest);
-    }
-}
-
-// --- Main Build Process ---
-export async function build() {
-    console.log('🚀 Starting selective build process...');
-
-    const distDir = join(PROJECT_ROOT, 'dist');
-    const distNM = join(distDir, 'node_modules');
-
-    // 1. Analyze dependencies
-    const dependencies = await getDependencies();
-
-    // 2. Bundle application code
-    console.log('📦 Bundling application code...');
-    await esbuild.build({
-        entryPoints: ['server.js'],
-        bundle: true,
-        platform: 'node',
-        target: 'node18',
-        format: 'esm',
-        outfile: join(distDir, 'app.js'),
-        sourcemap: !isProd,
-        minify: isProd,
-        treeShaking: true,
-        packages: 'external', // Keep dependencies external as they will be copied
-    });
-
-    // 3. Physical copy of required node_modules
-    console.log(`📂 Copying ${dependencies.length} selected modules to dist...`);
-    if (!fs.existsSync(distNM)) fs.mkdirSync(distNM, { recursive: true });
-
-    dependencies.forEach(dep => {
-        const srcPath = join(PROJECT_ROOT, 'node_modules', dep);
-        const destPath = join(distNM, dep);
-
-        if (fs.existsSync(srcPath)) {
-            // Handle scoped packages directory creation
-            if (dep.startsWith('@')) {
-                const scopeDir = dirname(destPath);
-                if (!fs.existsSync(scopeDir)) fs.mkdirSync(scopeDir, { recursive: true });
-            }
-            copyRecursive(srcPath, destPath);
-        }
-    });
-
-    // 4. Generate optimized package.json
-    console.log('📝 Generating minimal package.json...');
-    const rootPkg = JSON.parse(fs.readFileSync(join(PROJECT_ROOT, 'package.json'), 'utf-8'));
-    const distPkg = {
-        name: rootPkg.name,
+    const basicPackageJson = {
+        name: 'sillytavern',
+        version: '1.0.0',
+        description: 'Standalone server build',
         type: 'module',
-        main: 'app.js',
-        dependencies: Object.fromEntries(
-            dependencies.map(d => [d, rootPkg.dependencies?.[d] || '*']),
-        ),
+        private: true,
+        scripts: {
+            'start': './server',
+        },
     };
-    fs.writeFileSync(join(distDir, 'package.json'), JSON.stringify(distPkg, null, 2));
 
-    // 5. Cleanup with Modclean
-    console.log('🧹 Running Modclean optimization...');
-    const cleaner = modclean({
-        cwd: distNM,
-        removeEmptyDirs: true,
-        recursive: true,
-        ignorePatterns: [
-            '**/examples-compiler.js',
-        ],
-    });
+    await Bun.write(GENERATED_PKG_PATH, JSON.stringify(basicPackageJson, null, 2));
 
-    try {
-        const files = await cleaner.clean();
-        console.log(`✨ Cleanup successful! Removed ${files.length} unnecessary files.`);
-    } catch (err) {
-        console.error('⚠️ Modclean encountered an issue:', err.message);
+    console.log(`✅ Generated ${GENERATED_PKG_PATH}`);
+
+} catch (err) {
+    console.error('❌ Build failed:', err);
+    // Print build logs if available in the error object
+    if (err.logs) {
+        for (const log of err.logs) console.error(log);
     }
-
-    console.log('✅ Build complete! Output available in ./dist');
-}
-
-// Run the build
-build().catch(err => {
-    console.error('💥 Fatal build error:', err);
     process.exit(1);
-});
+}
