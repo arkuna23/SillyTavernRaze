@@ -182,7 +182,7 @@ async function build() {
         packages: "external",
     });
 
-    // 4. Physical Copy (Fix: Ensure directory exists BEFORE modclean)
+    // 4. Physical Copy
     console.log(`>> Copying ${dependencies.size} modules...`);
     if (!fs.existsSync(distNM)) fs.mkdirSync(distNM, { recursive: true });
 
@@ -199,7 +199,7 @@ async function build() {
         }
     });
 
-    // 5. Cleanup with Modclean (Now directory is guaranteed to exist)
+    // 5. Cleanup with Modclean
     if (fs.existsSync(distNM)) {
         console.log(">> Cleaning node_modules...");
         const cleaner = modclean({
@@ -208,8 +208,23 @@ async function build() {
             recursive: true,
             ignorePatterns: ["**/examples-compiler.js"],
         });
-        await cleaner.clean();
+
+        try {
+            await cleaner.clean();
+        } catch (err) {
+            console.warn(">> Modclean warning (ignored):", err.message);
+        }
     }
+
+    // 5.5 Generate minimal package.json in dist
+    console.log(">> Generating dist/package.json...");
+    const minimalPkg = {
+        type: "module",
+    };
+    fs.writeFileSync(
+        join(distDir, "package.json"),
+        JSON.stringify(minimalPkg, null, 2),
+    );
 
     // 6. Launch Scripts
     const isWin = process.platform === "win32";

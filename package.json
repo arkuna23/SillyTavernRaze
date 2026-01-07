@@ -184,6 +184,7 @@
         "eslint-plugin-jest": "^27.9.0",
         "eslint-plugin-jsdoc": "^48.10.0",
         "eslint-plugin-playwright": "^2.3.0",
+        "fflate": "^0.8.2",
         "glob": "^10.5.0",
         "html-loader": "^5.1.0",
         "html-webpack-plugin": "^5.6.5",
@@ -194,6 +195,7 @@
         "webpack-cli": "^6.0.1"
     },
     "resolutions": {
-        "**/cheerio": "1.0.0"
+        "**/cheerio": "1.0.0",
+        "**/cliui": "7.0.2"
     }
 }

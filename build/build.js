@@ -3,6 +3,7 @@ import path from "node:path";
 import fs from "node:fs/promises";
 import os from "node:os";
 import * as fflate from "fflate";
+import fsAsync from "node:fs/promises";
 
 const DIST_DIR = path.join(serverDirectory, "dist");
 const ZIP_NAME = `sillytavern_${os.platform()}_${os.arch()}.zip`;
@@ -28,8 +29,12 @@ console.log("🗜️ Archiving via API (Keeping empty folders)...");
 
 const zipData = {};
 
-async function scan(dir) {
-    const entries = await fs.readdir(dir, { withFileTypes: true });
+/**
+ * Scans the directory and prepares zipData.
+ * Only ignores the "_node" cache folder at the root level (depth 0).
+ */
+async function scan(dir, depth = 0) {
+    const entries = await fsAsync.readdir(dir, { withFileTypes: true });
 
     if (entries.length === 0) {
         const relativePath = path.relative(DIST_DIR, dir);
@@ -41,16 +46,25 @@ async function scan(dir) {
     }
 
     for (const entry of entries) {
-        if (entry.name.startsWith("_") || entry.name.endsWith(".zip")) continue;
+        // --- Logic: Only ignore at the FIRST level ---
+        if (depth === 0) {
+            // Ignore the cache folder and any existing zip files in the root dist dir
+            if (entry.name.startsWith("_") || entry.name.endsWith(".zip")) {
+                continue;
+            }
+        }
 
         const fullPath = path.join(dir, entry.name);
         const relativePath = path.relative(DIST_DIR, fullPath);
         const zipEntryName = relativePath.split(path.sep).join("/");
 
         if (entry.isDirectory()) {
-            await scan(fullPath);
+            // Increment depth when going deeper
+            await scan(fullPath, depth + 1);
         } else {
-            zipData[zipEntryName] = new Uint8Array(await fs.readFile(fullPath));
+            zipData[zipEntryName] = new Uint8Array(
+                await fsAsync.readFile(fullPath),
+            );
         }
     }
 }
