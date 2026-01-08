@@ -10,7 +10,6 @@ permissions:
   contents: write
 
 jobs:
-  # Job 1: Build for multiple platforms
   build:
     name: Build for ${{ matrix.platform }}
     runs-on: ${{ matrix.runner }}
@@ -56,7 +55,6 @@ jobs:
           retention-days: 7
           if-no-files-found: error
 
-  # Job 2: Create a single Release with all artifacts
   create-prerelease:
     name: Create Prerelease
     needs: build
@@ -70,12 +68,9 @@ jobs:
       - name: Get version and commit info
         id: info
         run: |
-          # Read version from package.json
           VERSION=$(node -p "require('./package.json').version")
-          # Get short commit hash
           SHORT_SHA=$(git rev-parse --short=7 HEAD)
           
-          # Format: v1.15.0-dev.4b20429
           TAG="v${VERSION}-dev.${SHORT_SHA}"
           
           echo "version=${VERSION}" >> $GITHUB_OUTPUT
@@ -90,45 +85,39 @@ jobs:
       - name: Prepare release files
         run: |
           mkdir -p release-files
-          # Find all archives in the downloaded artifacts and move them to a flat folder
           find artifacts/ -type f \( -name "*.zip" -o -name "*.tar.gz" \) -exec cp {} release-files/ \;
           ls -lh release-files/
 
       - name: Generate release notes
         id: release-notes
         run: |
-          # Create release notes file
-          cat > release-notes.md << 'EOF'
+          BUILD_DATE=$(date -u +"%Y-%m-%d %H:%M:%S UTC")
+          
+          cat > release-notes.md << EOF
           ## 🚀 SillyTavern Development Build
 
-          This is an automated prerelease build from the `dev` branch.
+          This is an automated prerelease build from the \`dev\` branch.
 
           **Version:** ${{ steps.info.outputs.version }}
           **Full Commit:** ${{ github.sha }}
           **Short Hash:** ${{ steps.info.outputs.sha }}
-          **Build Date:** $(date -u +"%Y-%m-%d %H:%M:%S UTC")
+          **Build Date:** $BUILD_DATE
 
           ### 📦 Available Builds
 
-          - **Linux x64**: `sillytavern_linux_x64.tar.gz`
-          - **Windows x64**: `sillytavern_win32_x64.zip`
-          - **macOS Apple Silicon (ARM64)**: `sillytavern_darwin_arm64.tar.gz`
+          - **Linux x64**: \`sillytavern_linux_x64.tar.gz\`
+          - **Windows x64**: \`sillytavern_win32_x64.zip\`
+          - **macOS Apple Silicon (ARM64)**: \`sillytavern_darwin_arm64.tar.gz\`
 
           ### ⚠️ Warning
 
           This is a development build and may contain bugs or incomplete features. Use at your own risk.
-
-          ### 📝 Recent Changes
           EOF
-
-          # Append the last 10 commit messages
-          git log --pretty=format:"- %s (%h)" -10 >> release-notes.md
           
-          # Securely write multi-line string to GITHUB_OUTPUT
           {
             echo "notes<<EOF_RELEASE_NOTES_DELIMITER"
             cat release-notes.md
-            echo "" # Critical: Ensure newline before delimiter
+            echo ""
             echo "EOF_RELEASE_NOTES_DELIMITER"
           } >> "$GITHUB_OUTPUT"
 
@@ -148,7 +137,6 @@ jobs:
         uses: dev-drprasad/delete-older-releases@v0.3.3
         with:
           keep_latest: 5
-          # Matches tags containing 'dev'
           delete_tag_pattern: dev
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
