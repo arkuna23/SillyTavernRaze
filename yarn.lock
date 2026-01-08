@@ -7292,6 +7292,11 @@ undici@^5.28.4:
   dependencies:
     "@fastify/busboy" "^2.0.0"
 
+undici@^7.18.2:
+  version "7.18.2"
+  resolved "https://registry.npmmirror.com/undici/-/undici-7.18.2.tgz"
+  integrity sha512-y+8YjDFzWdQlSE9N5nzKMT3g4a5UBX1HKowfdXh0uvAnTaqqwqB92Jt4UXBAeKekDs5IaDKyJFR4X1gYVCgXcw==
+
 unicode-canonical-property-names-ecmascript@^2.0.0:
   version "2.0.1"
   resolved "https://registry.npmmirror.com/unicode-canonical-property-names-ecmascript/-/unicode-canonical-property-names-ecmascript-2.0.1.tgz"
