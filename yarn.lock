@@ -1642,7 +1642,6 @@
     "@jridgewell/trace-mapping" "^0.3.24"
 
 "@jridgewell/remapping@^2.3.5":
-  version "2.3.5"
   resolved "https://registry.npmmirror.com/@jridgewell/remapping/-/remapping-2.3.5.tgz#375c476d1972947851ba1e15ae8f123047445aa1"
   integrity sha512-LI9u/+laYG4Ds1TDKSJW2YPrIlcVYOwi2fUC6xB43lueCjgxV4lffOCZCtYFiH6TNOX+tQKXx97T4IKHbhyHEQ==
   dependencies:
