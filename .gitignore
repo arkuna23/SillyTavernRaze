@@ -57,3 +57,4 @@ public/scripts/extensions/third-party
 /StartDev.bat
 *.code-workspace
 test-results/
+yarn.lock
