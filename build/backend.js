@@ -193,6 +193,12 @@ async function build() {
     dependencies.forEach((dep) => {
         const srcPath = join(PROJECT_ROOT, 'node_modules', dep);
         const destPath = join(distNM, dep);
+
+        if (fs.existsSync(destPath)) {
+            console.log(`   [Skip] ${dep} already exists.`);
+            return;
+        }
+
         if (fs.existsSync(srcPath)) {
             if (dep.startsWith('@')) {
                 const scopeDir = dirname(destPath);
