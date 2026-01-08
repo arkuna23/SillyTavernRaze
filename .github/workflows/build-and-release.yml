@@ -119,7 +119,6 @@ jobs:
 
           - **Linux x64**: `sillytavern_linux_x64.tar.gz`
           - **Windows x64**: `sillytavern_win32_x64.zip`
-          - **macOS Intel (x64)**: `sillytavern_darwin_x64.tar.gz`
           - **macOS Apple Silicon (ARM64)**: `sillytavern_darwin_arm64.tar.gz`
 
           ### ⚠️ Warning
@@ -133,9 +132,9 @@ jobs:
           # Get commit messages since last tag
           git log --pretty=format:"- %s (%h)" -10 >> release-notes.md
 
-          echo "notes<<EOF" >> $GITHUB_OUTPUT
+          echo "notes<<EOF_RELEASE_NOTES_DELIMITER" >> $GITHUB_OUTPUT
           cat release-notes.md >> $GITHUB_OUTPUT
-          echo "EOF" >> $GITHUB_OUTPUT
+          echo "EOF_RELEASE_NOTES_DELIMITER" >> $GITHUB_OUTPUT
 
       - name: Create prerelease
         uses: softprops/action-gh-release@v1
