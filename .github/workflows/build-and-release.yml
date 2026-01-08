@@ -10,6 +10,7 @@ permissions:
   contents: write
 
 jobs:
+  # Job 1: Build for multiple platforms
   build:
     name: Build for ${{ matrix.platform }}
     runs-on: ${{ matrix.runner }}
@@ -17,17 +18,14 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # Linux x64 build
           - platform: linux-x64
             runner: ubuntu-latest
             expected-file: sillytavern_linux_x64.tar.gz
 
-          # Windows x64 build
           - platform: windows-x64
             runner: windows-latest
             expected-file: sillytavern_win32_x64.zip
 
-          # macOS Apple Silicon build
           - platform: macos-arm
             runner: macos-latest
             expected-file: sillytavern_darwin_arm64.tar.gz
@@ -50,14 +48,6 @@ jobs:
         env:
           NODE_ENV: production
 
-      - name: List dist directory (Linux/macOS)
-        if: runner.os != 'Windows'
-        run: ls -lah dist/
-
-      - name: List dist directory (Windows)
-        if: runner.os == 'Windows'
-        run: dir dist\
-
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
         with:
@@ -66,6 +56,7 @@ jobs:
           retention-days: 7
           if-no-files-found: error
 
+  # Job 2: Create a single Release with all artifacts
   create-prerelease:
     name: Create Prerelease
     needs: build
@@ -76,17 +67,19 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Get package version
-        id: package-version
-        run: echo "version=$(node -p "require('./package.json').version")" >> $GITHUB_OUTPUT
-
-      - name: Generate prerelease tag
-        id: prerelease-tag
+      - name: Get version and commit info
+        id: info
         run: |
-          VERSION=${{ steps.package-version.outputs.version }}
-          TIMESTAMP=$(date +%Y%m%d%H%M%S)
-          SHORT_SHA=$(git rev-parse --short HEAD)
-          TAG="v${VERSION}-dev.${TIMESTAMP}.${SHORT_SHA}"
+          # Read version from package.json
+          VERSION=$(node -p "require('./package.json').version")
+          # Get short commit hash
+          SHORT_SHA=$(git rev-parse --short=7 HEAD)
+          
+          # Format: v1.15.0-dev.4b20429
+          TAG="v${VERSION}-dev.${SHORT_SHA}"
+          
+          echo "version=${VERSION}" >> $GITHUB_OUTPUT
+          echo "sha=${SHORT_SHA}" >> $GITHUB_OUTPUT
           echo "tag=${TAG}" >> $GITHUB_OUTPUT
 
       - name: Download all artifacts
@@ -94,25 +87,25 @@ jobs:
         with:
           path: artifacts/
 
-      - name: Display structure of downloaded artifacts
-        run: ls -lR artifacts/
-
       - name: Prepare release files
         run: |
           mkdir -p release-files
+          # Find all archives in the downloaded artifacts and move them to a flat folder
           find artifacts/ -type f \( -name "*.zip" -o -name "*.tar.gz" \) -exec cp {} release-files/ \;
           ls -lh release-files/
 
       - name: Generate release notes
         id: release-notes
         run: |
+          # Create release notes file
           cat > release-notes.md << 'EOF'
           ## 🚀 SillyTavern Development Build
 
           This is an automated prerelease build from the `dev` branch.
 
-          **Version:** ${{ steps.package-version.outputs.version }}
-          **Commit:** ${{ github.sha }}
+          **Version:** ${{ steps.info.outputs.version }}
+          **Full Commit:** ${{ github.sha }}
+          **Short Hash:** ${{ steps.info.outputs.sha }}
           **Build Date:** $(date -u +"%Y-%m-%d %H:%M:%S UTC")
 
           ### 📦 Available Builds
@@ -126,21 +119,24 @@ jobs:
           This is a development build and may contain bugs or incomplete features. Use at your own risk.
 
           ### 📝 Recent Changes
-
           EOF
 
-          # Get commit messages since last tag
+          # Append the last 10 commit messages
           git log --pretty=format:"- %s (%h)" -10 >> release-notes.md
-
-          echo "notes<<EOF_RELEASE_NOTES_DELIMITER" >> $GITHUB_OUTPUT
-          cat release-notes.md >> $GITHUB_OUTPUT
-          echo "EOF_RELEASE_NOTES_DELIMITER" >> $GITHUB_OUTPUT
+          
+          # Securely write multi-line string to GITHUB_OUTPUT
+          {
+            echo "notes<<EOF_RELEASE_NOTES_DELIMITER"
+            cat release-notes.md
+            echo "" # Critical: Ensure newline before delimiter
+            echo "EOF_RELEASE_NOTES_DELIMITER"
+          } >> "$GITHUB_OUTPUT"
 
       - name: Create prerelease
         uses: softprops/action-gh-release@v1
         with:
-          tag_name: ${{ steps.prerelease-tag.outputs.tag }}
-          name: Development Build ${{ steps.prerelease-tag.outputs.tag }}
+          tag_name: ${{ steps.info.outputs.tag }}
+          name: "Development Build (${{ steps.info.outputs.tag }})"
           body: ${{ steps.release-notes.outputs.notes }}
           draft: false
           prerelease: true
@@ -152,6 +148,7 @@ jobs:
         uses: dev-drprasad/delete-older-releases@v0.3.3
         with:
           keep_latest: 5
+          # Matches tags containing 'dev'
           delete_tag_pattern: dev
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
