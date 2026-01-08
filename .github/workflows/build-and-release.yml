@@ -27,11 +27,6 @@ jobs:
             runner: windows-latest
             expected-file: sillytavern_win32_x64.zip
 
-          # macOS Intel build
-          - platform: macos-intel
-            runner: macos-13
-            expected-file: sillytavern_darwin_x64.tar.gz
-
           # macOS Apple Silicon build
           - platform: macos-arm
             runner: macos-latest
