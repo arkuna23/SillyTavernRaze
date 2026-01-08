@@ -1,0 +1,163 @@
+name: Build and Release Prerelease
+
+on:
+  push:
+    branches:
+      - dev
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build for ${{ matrix.platform }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Linux x64 build
+          - platform: linux-x64
+            runner: ubuntu-latest
+            expected-file: sillytavern_linux_x64.tar.gz
+
+          # Windows x64 build
+          - platform: windows-x64
+            runner: windows-latest
+            expected-file: sillytavern_win32_x64.zip
+
+          # macOS Intel build
+          - platform: macos-intel
+            runner: macos-13
+            expected-file: sillytavern_darwin_x64.tar.gz
+
+          # macOS Apple Silicon build
+          - platform: macos-arm
+            runner: macos-latest
+            expected-file: sillytavern_darwin_arm64.tar.gz
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build distribution
+        run: npm run build:dist
+        env:
+          NODE_ENV: production
+
+      - name: List dist directory (Linux/macOS)
+        if: runner.os != 'Windows'
+        run: ls -lah dist/
+
+      - name: List dist directory (Windows)
+        if: runner.os == 'Windows'
+        run: dir dist\
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: sillytavern-${{ matrix.platform }}
+          path: dist/${{ matrix.expected-file }}
+          retention-days: 7
+          if-no-files-found: error
+
+  create-prerelease:
+    name: Create Prerelease
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Get package version
+        id: package-version
+        run: echo "version=$(node -p "require('./package.json').version")" >> $GITHUB_OUTPUT
+
+      - name: Generate prerelease tag
+        id: prerelease-tag
+        run: |
+          VERSION=${{ steps.package-version.outputs.version }}
+          TIMESTAMP=$(date +%Y%m%d%H%M%S)
+          SHORT_SHA=$(git rev-parse --short HEAD)
+          TAG="v${VERSION}-dev.${TIMESTAMP}.${SHORT_SHA}"
+          echo "tag=${TAG}" >> $GITHUB_OUTPUT
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts/
+
+      - name: Display structure of downloaded artifacts
+        run: ls -lR artifacts/
+
+      - name: Prepare release files
+        run: |
+          mkdir -p release-files
+          find artifacts/ -type f \( -name "*.zip" -o -name "*.tar.gz" \) -exec cp {} release-files/ \;
+          ls -lh release-files/
+
+      - name: Generate release notes
+        id: release-notes
+        run: |
+          cat > release-notes.md << 'EOF'
+          ## 🚀 SillyTavern Development Build
+
+          This is an automated prerelease build from the `dev` branch.
+
+          **Version:** ${{ steps.package-version.outputs.version }}
+          **Commit:** ${{ github.sha }}
+          **Build Date:** $(date -u +"%Y-%m-%d %H:%M:%S UTC")
+
+          ### 📦 Available Builds
+
+          - **Linux x64**: `sillytavern_linux_x64.tar.gz`
+          - **Windows x64**: `sillytavern_win32_x64.zip`
+          - **macOS Intel (x64)**: `sillytavern_darwin_x64.tar.gz`
+          - **macOS Apple Silicon (ARM64)**: `sillytavern_darwin_arm64.tar.gz`
+
+          ### ⚠️ Warning
+
+          This is a development build and may contain bugs or incomplete features. Use at your own risk.
+
+          ### 📝 Recent Changes
+
+          EOF
+
+          # Get commit messages since last tag
+          git log --pretty=format:"- %s (%h)" -10 >> release-notes.md
+
+          echo "notes<<EOF" >> $GITHUB_OUTPUT
+          cat release-notes.md >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+      - name: Create prerelease
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: ${{ steps.prerelease-tag.outputs.tag }}
+          name: Development Build ${{ steps.prerelease-tag.outputs.tag }}
+          body: ${{ steps.release-notes.outputs.notes }}
+          draft: false
+          prerelease: true
+          files: release-files/*
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Delete old prereleases
+        uses: dev-drprasad/delete-older-releases@v0.3.3
+        with:
+          keep_latest: 5
+          delete_tag_pattern: dev
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
