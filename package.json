@@ -198,6 +198,7 @@
     },
     "resolutions": {
         "**/cheerio": "1.0.0",
-        "**/cliui": "7.0.2"
+        "**/cliui": "7.0.2",
+        "**/cookies": "https://github.com/arkuna23/cookies.git#dev"
     }
 }
