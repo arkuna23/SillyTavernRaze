@@ -226,11 +226,27 @@ async function build() {
         }
     }
 
-    // 5.5 Generate minimal package.json in dist
+    // 5.5 Copy tokenizers directory
+    console.log('>> Copying src/tokenizers to dist...');
+    const tokenizersSource = join(PROJECT_ROOT, 'src', 'tokenizers');
+    const tokenizersDestDir = join(distDir, 'src');
+    const tokenizersDest = join(tokenizersDestDir, 'tokenizers');
+
+    if (fs.existsSync(tokenizersSource)) {
+        if (!fs.existsSync(tokenizersDestDir)) {
+            fs.mkdirSync(tokenizersDestDir, { recursive: true });
+        }
+        copyRecursive(tokenizersSource, tokenizersDest);
+        console.log('   [Done] Tokenizers copied successfully.');
+    } else {
+        console.warn('   [Warning] src/tokenizers directory not found.');
+    }
+
+    // 5.6 Generate minimal package.json in dist
     console.log(`>> Generating dist/package.json (v${PROJECT_VERSION})...`);
     const minimalPkg = {
-        name: rootPkg.name || 'portable-app', // 建议同时保留名称
-        version: PROJECT_VERSION, // 设定为项目的版本号
+        name: rootPkg.name || 'portable-app',
+        version: PROJECT_VERSION,
         type: 'module',
     };
     fs.writeFileSync(
