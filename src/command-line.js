@@ -269,6 +269,7 @@ export class CommandLineParser {
         if (isGlobal && !fs.existsSync(path.dirname(configPath))) {
             fs.mkdirSync(path.dirname(configPath), { recursive: true });
         }
+        console.log("cmd init:", configPath);
         initConfig(configPath);
 
         const dataRoot = isGlobal

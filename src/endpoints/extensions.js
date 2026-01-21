@@ -3,14 +3,44 @@ import fs from 'node:fs';
 
 import express from 'express';
 import sanitize from 'sanitize-filename';
-import { CheckRepoActions, default as simpleGit } from 'simple-git';
+import * as git from 'isomorphic-git';
+import http from 'isomorphic-git/http/node/index.cjs';
 
 import { PUBLIC_DIRECTORIES } from '../constants.js';
 
 /**
- * @type {Partial<import('simple-git').SimpleGitOptions>}
+ * Check if directory is a git repository
+ * @param {string} extensionPath - Path to check
+ * @returns {Promise<boolean>}
  */
-const OPTIONS = Object.freeze({ timeout: { block: 5 * 60 * 1000 } });
+async function isGitRepo(extensionPath) {
+    try {
+        await git.resolveRef({ fs, dir: extensionPath, ref: 'HEAD' });
+        return true;
+    } catch {
+        return false;
+    }
+}
+
+/**
+ * Get commits between two refs
+ * @param {string} extensionPath - Path to repository
+ * @param {string} fromRef - Starting ref
+ * @param {string} toRef - Ending ref
+ * @returns {Promise<{total: number}>}
+ */
+async function getCommitsBetween(extensionPath, fromRef, toRef) {
+    const fromOid = await git.resolveRef({ fs, dir: extensionPath, ref: fromRef });
+    const commits = await git.log({ fs, dir: extensionPath, ref: toRef });
+
+    const betweenCommits = [];
+    for (const commit of commits) {
+        if (commit.oid === fromOid) break;
+        betweenCommits.push(commit);
+    }
+
+    return { total: betweenCommits.length };
+}
 
 /**
  * This function extracts the extension information from the manifest file.
@@ -35,17 +65,13 @@ async function getManifest(extensionPath) {
  * @returns {Promise<Object>} - Returns the extension information as an object
  */
 async function checkIfRepoIsUpToDate(extensionPath) {
-    const git = simpleGit({ baseDir: extensionPath, ...OPTIONS });
-    await git.fetch('origin');
-    const currentBranch = await git.branch();
-    const currentCommitHash = await git.revparse(['HEAD']);
-    const log = await git.log({
-        from: currentCommitHash,
-        to: `origin/${currentBranch.current}`,
-    });
+    await git.fetch({ fs, http, dir: extensionPath, remote: 'origin' });
+    const currentBranchName = await git.currentBranch({ fs, dir: extensionPath, fullname: false });
+    const currentCommitHash = await git.resolveRef({ fs, dir: extensionPath, ref: 'HEAD' });
+    const log = await getCommitsBetween(extensionPath, currentCommitHash, `origin/${currentBranchName}`);
 
     // Fetch remote repository information
-    const remotes = await git.getRemotes(true);
+    const remotes = await git.listRemotes({ fs, dir: extensionPath });
     if (remotes.length === 0) {
         return {
             isUpToDate: true,
@@ -55,7 +81,7 @@ async function checkIfRepoIsUpToDate(extensionPath) {
 
     return {
         isUpToDate: log.total === 0,
-        remoteUrl: remotes[0].refs.fetch, // URL of the remote repository
+        remoteUrl: remotes[0].url, // URL of the remote repository
     };
 }
 
@@ -76,9 +102,6 @@ router.post('/install', async (request, response) => {
     }
 
     try {
-        // No timeout for cloning, as it may take a while depending on the repo size
-        const git = simpleGit();
-
         // make sure the third-party directory exists
         if (!fs.existsSync(path.join(request.user.directories.extensions))) {
             fs.mkdirSync(path.join(request.user.directories.extensions));
@@ -102,11 +125,15 @@ router.post('/install', async (request, response) => {
             return response.status(409).send(`Directory already exists at ${extensionPath}`);
         }
 
-        const cloneOptions = { '--depth': 1 };
-        if (branch) {
-            cloneOptions['--branch'] = branch;
-        }
-        await git.clone(url, extensionPath, cloneOptions);
+        await git.clone({
+            fs,
+            http,
+            dir: extensionPath,
+            url,
+            depth: 1,
+            singleBranch: true,
+            ref: branch || undefined,
+        });
         console.info(`Extension has been cloned to ${extensionPath} from ${url} at ${branch || '(default)'} branch`);
 
         const { version, author, display_name } = await getManifest(extensionPath);
@@ -150,20 +177,19 @@ router.post('/update', async (request, response) => {
         }
 
         const { isUpToDate, remoteUrl } = await checkIfRepoIsUpToDate(extensionPath);
-        const git = simpleGit({ baseDir: extensionPath, ...OPTIONS });
-        const isRepo = await git.checkIsRepo(CheckRepoActions.IS_REPO_ROOT);
+        const isRepo = await isGitRepo(extensionPath);
         if (!isRepo) {
             throw new Error(`Directory is not a Git repository at ${extensionPath}`);
         }
-        const currentBranch = await git.branch();
+        const currentBranchName = await git.currentBranch({ fs, dir: extensionPath, fullname: false });
         if (!isUpToDate) {
-            await git.pull('origin', currentBranch.current);
+            await git.fastForward({ fs, http, dir: extensionPath, ref: currentBranchName });
             console.info(`Extension has been updated at ${extensionPath}`);
         } else {
             console.info(`Extension is up to date at ${extensionPath}`);
         }
-        await git.fetch('origin');
-        const fullCommitHash = await git.revparse(['HEAD']);
+        await git.fetch({ fs, http, dir: extensionPath, remote: 'origin' });
+        const fullCommitHash = await git.resolveRef({ fs, dir: extensionPath, ref: 'HEAD' });
         const shortCommitHash = fullCommitHash.slice(0, 7);
 
         return response.send({ shortCommitHash, extensionPath, isUpToDate, remoteUrl });
@@ -193,23 +219,43 @@ router.post('/branches', async (request, response) => {
             return response.status(404).send(`Directory does not exist at ${extensionPath}`);
         }
 
-        const git = simpleGit({ baseDir: extensionPath, ...OPTIONS });
         // Unshallow the repository if it is shallow
-        const isShallow = await git.revparse(['--is-shallow-repository']) === 'true';
+        const isShallow = fs.existsSync(path.join(extensionPath, '.git', 'shallow'));
         if (isShallow) {
             console.info(`Unshallowing the repository at ${extensionPath}`);
-            await git.fetch('origin', ['--unshallow']);
+            await git.fetch({ fs, http, dir: extensionPath, remote: 'origin', depth: 2147483647 });
         }
 
         // Fetch all branches
-        await git.remote(['set-branches', 'origin', '*']);
-        await git.fetch('origin');
-        const localBranches = await git.branchLocal();
-        const remoteBranches = await git.branch(['-r', '--list', 'origin/*']);
-        const result = [
-            ...Object.values(localBranches.branches),
-            ...Object.values(remoteBranches.branches),
-        ].map(b => ({ current: b.current, commit: b.commit, name: b.name, label: b.label }));
+        await git.fetch({ fs, http, dir: extensionPath, remote: 'origin' });
+        const localBranches = await git.listBranches({ fs, dir: extensionPath });
+        const remoteBranches = await git.listBranches({ fs, dir: extensionPath, remote: 'origin' });
+        const currentBranchName = await git.currentBranch({ fs, dir: extensionPath, fullname: false });
+
+        const result = [];
+
+        // Add local branches
+        for (const branchName of localBranches) {
+            const oid = await git.resolveRef({ fs, dir: extensionPath, ref: branchName });
+            result.push({
+                current: branchName === currentBranchName,
+                commit: oid.slice(0, 7),
+                name: branchName,
+                label: branchName,
+            });
+        }
+
+        // Add remote branches
+        for (const branchName of remoteBranches) {
+            const remoteName = `origin/${branchName}`;
+            const oid = await git.resolveRef({ fs, dir: extensionPath, ref: remoteName });
+            result.push({
+                current: false,
+                commit: oid.slice(0, 7),
+                name: remoteName,
+                label: remoteName,
+            });
+        }
 
         return response.send(result);
     } catch (error) {
@@ -238,36 +284,35 @@ router.post('/switch', async (request, response) => {
             return response.status(404).send(`Directory does not exist at ${extensionPath}`);
         }
 
-        const git = simpleGit({ baseDir: extensionPath, ...OPTIONS });
-        const branches = await git.branchLocal();
+        const branches = await git.listBranches({ fs, dir: extensionPath });
 
         if (String(branch).startsWith('origin/')) {
             const localBranch = branch.replace('origin/', '');
-            if (branches.all.includes(localBranch)) {
+            if (branches.includes(localBranch)) {
                 console.info(`Branch ${localBranch} already exists locally, checking it out`);
-                await git.checkout(localBranch);
+                await git.checkout({ fs, dir: extensionPath, ref: localBranch });
                 return response.sendStatus(204);
             }
 
             console.info(`Branch ${localBranch} does not exist locally, creating it from ${branch}`);
-            await git.checkoutBranch(localBranch, branch);
+            await git.branch({ fs, dir: extensionPath, ref: localBranch, checkout: true, startPoint: branch });
             return response.sendStatus(204);
         }
 
-        if (!branches.all.includes(branch)) {
+        if (!branches.includes(branch)) {
             console.error(`Branch ${branch} does not exist locally`);
             return response.status(404).send(`Branch ${branch} does not exist locally`);
         }
 
         // Check if the branch is already checked out
-        const currentBranch = await git.branch();
-        if (currentBranch.current === branch) {
+        const currentBranchName = await git.currentBranch({ fs, dir: extensionPath, fullname: false });
+        if (currentBranchName === branch) {
             console.info(`Branch ${branch} is already checked out`);
             return response.sendStatus(204);
         }
 
         // Checkout the branch
-        await git.checkout(branch);
+        await git.checkout({ fs, dir: extensionPath, ref: branch });
         console.info(`Checked out branch ${branch} at ${extensionPath}`);
 
         return response.sendStatus(204);
@@ -345,24 +390,21 @@ router.post('/version', async (request, response) => {
             return response.status(404).send(`Directory does not exist at ${extensionPath}`);
         }
 
-        const git = simpleGit({ baseDir: extensionPath, ...OPTIONS });
         let currentCommitHash;
         try {
-            const isRepo = await git.checkIsRepo(CheckRepoActions.IS_REPO_ROOT);
+            const isRepo = await isGitRepo(extensionPath);
             if (!isRepo) {
                 throw new Error(`Directory is not a Git repository at ${extensionPath}`);
             }
-            currentCommitHash = await git.revparse(['HEAD']);
+            currentCommitHash = await git.resolveRef({ fs, dir: extensionPath, ref: 'HEAD' });
         } catch (error) {
             // it is not a git repo, or has no commits yet, or is a bare repo
             // not possible to update it, most likely can't get the branch name either
             return response.send({ currentBranchName: '', currentCommitHash: '', isUpToDate: true, remoteUrl: '' });
         }
 
-        const currentBranch = await git.branch();
-        // get only the working branch
-        const currentBranchName = currentBranch.current;
-        await git.fetch('origin');
+        const currentBranchName = await git.currentBranch({ fs, dir: extensionPath, fullname: false });
+        await git.fetch({ fs, http, dir: extensionPath, remote: 'origin' });
         console.debug(extensionName, currentBranchName, currentCommitHash);
         const { isUpToDate, remoteUrl } = await checkIfRepoIsUpToDate(extensionPath);
 

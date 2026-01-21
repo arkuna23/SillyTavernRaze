@@ -70,6 +70,8 @@ import { diskCache } from './endpoints/characters.js';
 import { migrateFlatSecrets } from './endpoints/secrets.js';
 import { migrateGroupChatsMetadataFormat } from './endpoints/groups.js';
 
+console.log("Server starting...")
+
 // Work around a node v20.0.0, v20.1.0, and v20.2.0 bug. The issue was fixed in v20.3.0.
 // https://github.com/nodejs/node/issues/47822#issuecomment-1564708870
 // Safe to remove once support for Node v20 is dropped.
@@ -401,6 +403,10 @@ async function postSetupTasks(result) {
 
     setupLogLevel();
     serverEvents.emit(EVENT_NAMES.SERVER_STARTED, { url: browserLaunchUrl });
+
+    if (globalThis.__COMPILED__ && process.platform === 'android') {
+        console.log(`launched:${browserLaunchUrl}`)
+    }
 }
 
 /**

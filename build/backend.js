@@ -138,7 +138,8 @@ async function build() {
     if (!fs.existsSync(distDir)) fs.mkdirSync(distDir, { recursive: true });
 
     // 1. Runtime Setup
-    await setupNodeRuntime(distDir);
+    if (!globalThis.IS_PACK_MODE)
+        await setupNodeRuntime(distDir);
 
     // 2. Dependency Analysis
     const analysis = await esbuild.build({
@@ -174,7 +175,7 @@ async function build() {
     // 3. Bundle App
     console.log('>> Bundling application...');
     await esbuild.build({
-        entryPoints: ['server.js'],
+        entryPoints: ['entry.js'],
         bundle: true,
         platform: 'node',
         target: 'node18',

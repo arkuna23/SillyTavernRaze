@@ -61,6 +61,7 @@
         "ip-regex": "^5.0.0",
         "ipaddr.js": "^2.2.0",
         "is-docker": "^3.0.0",
+        "isomorphic-git": "https://raw.githubusercontent.com/arkuna23/isomorphic-git/refs/heads/main/isomorphic-git-0.0.0-development.tgz",
         "localforage": "^1.10.0",
         "lodash": "^4.17.21",
         "mime-types": "^3.0.2",
@@ -80,7 +81,6 @@
         "seedrandom": "^3.0.5",
         "showdown": "^2.1.0",
         "sillytavern-transformers": "2.14.6",
-        "simple-git": "^3.28.0",
         "slidetoggle": "^4.0.0",
         "tiktoken": "^1.0.22",
         "url-join": "^5.0.0",
@@ -134,7 +134,8 @@
         "plugins:install": "node plugins install",
         "build:node": "node ./build/backend.js",
         "build:html": "node ./build/frontend.js",
-        "build:dist": "node ./build/build.js"
+        "build:dist": "node ./build/build.js",
+        "build:pack": "node ./build/build.js --pack"
     },
     "bin": {
         "sillytavern": "./src/server-global.js"
