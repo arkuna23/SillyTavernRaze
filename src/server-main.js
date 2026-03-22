@@ -69,6 +69,7 @@ import { redirectDeprecatedEndpoints, ServerStartup, setupPrivateEndpoints } fro
 import { diskCache } from './endpoints/characters.js';
 import { migrateFlatSecrets } from './endpoints/secrets.js';
 import { migrateGroupChatsMetadataFormat } from './endpoints/groups.js';
+import { notifyLaunched } from './rave-util.js';
 
 console.log("Server starting...")
 
@@ -405,7 +406,7 @@ async function postSetupTasks(result) {
     serverEvents.emit(EVENT_NAMES.SERVER_STARTED, { url: browserLaunchUrl });
 
     if (globalThis.__COMPILED__ && process.platform === 'android') {
-        console.log(`launched:${browserLaunchUrl}`)
+        notifyLaunched();
     }
 }
 

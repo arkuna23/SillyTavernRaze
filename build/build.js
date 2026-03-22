@@ -24,10 +24,10 @@ const ARCHIVE_PATH = IS_PACK_MODE ? path.join(DIST_DIR, `silly_tavern.${EXT}`) :
 console.log(`🚀 Starting Build Process... ${IS_PACK_MODE ? '(PACK MODE)' : ''}`);
 
 console.log('🔨 Building backend...');
-await import('./backend.js');
+await import('./backend.js').then(pkg => pkg.build());
 
 console.log('🎨 Building frontend...');
-await import('./frontend.js');
+await import('./frontend.js').then(pkg => pkg.build());
 
 console.log('📂 Copying default files...');
 const srcDefault = path.join(serverDirectory, 'default');
@@ -51,7 +51,7 @@ const shouldExclude = (fileName) => {
 console.log(`🗜️ Archiving via API into ${EXT}...`);
 
 if (IS_WIN || IS_PACK_MODE) {
-    console.log(`   Generating ZIP archive...`);
+    console.log('\tGenerating ZIP archive...');
     const zipData = {};
 
     async function scan(dir, depth = 0) {
@@ -92,7 +92,7 @@ if (IS_WIN || IS_PACK_MODE) {
 
 } else {
     // 非 pack 模式下的 Linux/macOS 走 TAR 逻辑
-    console.log('   Generating TAR.GZ archive for Linux/macOS...');
+    console.log('\tGenerating TAR.GZ archive for Linux/macOS...');
 
     await tar.create(
         {
@@ -110,5 +110,3 @@ if (IS_WIN || IS_PACK_MODE) {
 }
 
 console.log(`✅ Build completed: ${ARCHIVE_PATH}`);
-
-export {};

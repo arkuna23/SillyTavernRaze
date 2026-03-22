@@ -37,7 +37,7 @@ async function processWebpackLib() {
 
             if (stats?.hasErrors()) {
                 const info = stats.toJson();
-                return reject(new Error(info.errors?.map(e => e.message).join('\n')));
+                return reject(new Error(info.errors?.map((e) => e.message).join('\n')));
             }
 
             compiler.close(() => resolve());
@@ -141,10 +141,13 @@ async function processHTMLFiles() {
  * Copy static files (images, fonts, etc.)
  */
 async function processStaticFiles() {
-    const staticFiles = await glob('**/*.{png,jpg,jpeg,gif,svg,ico,woff,woff2,ttf,eot,mp3,wav,json}', {
-        cwd: publicDir,
-        nodir: true,
-    });
+    const staticFiles = await glob(
+        '**/*.{png,jpg,jpeg,gif,svg,ico,woff,woff2,ttf,eot,mp3,wav,json}',
+        {
+            cwd: publicDir,
+            nodir: true,
+        },
+    );
 
     for (const file of staticFiles) {
         const sourcePath = path.join(publicDir, file);
@@ -160,7 +163,7 @@ async function processStaticFiles() {
 /**
  * Main build orchestration
  */
-async function build() {
+export async function build() {
     console.log('🚀 Starting build process...\n');
 
     // Clean dist directory
@@ -193,4 +196,9 @@ async function build() {
     }
 }
 
-await build();
+if (process.argv[1] === fileURLToPath(import.meta.url)) {
+    await build().catch((err) => {
+        console.error('!! Fatal Error:', err);
+        process.exit(1);
+    });
+}
