@@ -1,5 +1,4 @@
 // native node modules
-import fs from 'node:fs';
 import path from 'node:path';
 import util from 'node:util';
 import net from 'node:net';
@@ -59,6 +58,7 @@ import {
     getConfigValue,
 } from './util.js';
 import { UPLOADS_DIRECTORY } from './constants.js';
+import { ensureThumbnailCache } from './endpoints/thumbnails.js';
 
 // Routers
 import { router as usersPublicRouter } from './endpoints/users-public.js';
@@ -69,7 +69,9 @@ import { redirectDeprecatedEndpoints, ServerStartup, setupPrivateEndpoints } fro
 import { diskCache } from './endpoints/characters.js';
 import { migrateFlatSecrets } from './endpoints/secrets.js';
 import { migrateGroupChatsMetadataFormat } from './endpoints/groups.js';
-import { initializeAllUserMetadata } from './endpoints/image-metadata.js';
+import { notifyLaunched } from './rave-util.js';
+
+console.log("Server starting...")
 
 // Work around a node v20.0.0, v20.1.0, and v20.2.0 bug. The issue was fixed in v20.3.0.
 // https://github.com/nodejs/node/issues/47822#issuecomment-1564708870
@@ -103,32 +105,12 @@ app.use(bodyParser.json({ limit: '500mb' }));
 app.use(bodyParser.urlencoded({ extended: true, limit: '500mb' }));
 
 // CORS Settings //
-const corsEnabled = getConfigValue('cors.enabled', true, 'boolean');
-if (corsEnabled) {
-    const corsOrigin = getConfigValue('cors.origin', 'null');
-    const corsMethods = getConfigValue('cors.methods', ['OPTIONS']);
-    const corsAllowedHeaders = getConfigValue('cors.allowedHeaders', []);
-    const corsExposedHeaders = getConfigValue('cors.exposedHeaders', []);
-    const corsCredentials = getConfigValue('cors.credentials', false, 'boolean');
-    const corsMaxAge = getConfigValue('cors.maxAge', null, 'number');
+const CORS = cors({
+    origin: 'null',
+    methods: ['OPTIONS'],
+});
 
-    /** @type {cors.CorsOptions} */
-    const corsOptions = {
-        origin: corsOrigin,
-        methods: corsMethods,
-        credentials: corsCredentials,
-    };
-    if (Array.isArray(corsAllowedHeaders) && corsAllowedHeaders.length > 0) {
-        corsOptions.allowedHeaders = corsAllowedHeaders;
-    }
-    if (Array.isArray(corsExposedHeaders) && corsExposedHeaders.length > 0) {
-        corsOptions.exposedHeaders = corsExposedHeaders;
-    }
-    if (corsMaxAge !== null && Number.isInteger(corsMaxAge)) {
-        corsOptions.maxAge = corsMaxAge;
-    }
-    app.use(cors(corsOptions));
-}
+app.use(CORS);
 
 if (cliArgs.listen && cliArgs.basicAuthMode) {
     app.use(basicAuthMiddleware);
@@ -143,6 +125,16 @@ app.use(hostWhitelistMiddleware);
 
 if (cliArgs.listen) {
     app.use(accessLoggerMiddleware());
+}
+
+if (cliArgs.enableCorsProxy) {
+    app.use('/proxy/:url(*)', corsProxyMiddleware);
+} else {
+    app.use('/proxy/:url(*)', async (_, res) => {
+        const message = 'CORS proxy is disabled. Enable it in config.yaml or use the --corsProxy flag.';
+        console.log(message);
+        res.status(404).send(message);
+    });
 }
 
 app.use(cookieSession({
@@ -174,9 +166,6 @@ if (!cliArgs.disableCsrf) {
                 return;
             }
             req.session.csrfToken = token;
-        },
-        skipCsrfProtection: (req) => {
-            return cliArgs.enableCorsProxy ? /^\/proxy\//.test(req.path) : false;
         },
         size: 32,
     });
@@ -268,16 +257,6 @@ app.post('/api/ping', (request, response) => {
     response.sendStatus(204);
 });
 
-if (cliArgs.enableCorsProxy) {
-    app.use('/proxy/:url(*)', corsProxyMiddleware);
-} else {
-    app.use('/proxy/:url(*)', async (_, res) => {
-        const message = 'CORS proxy is disabled. Enable it in config.yaml or use the --corsProxy flag.';
-        console.log(message);
-        res.status(404).send(message);
-    });
-}
-
 // File uploads
 const uploadsPath = path.join(cliArgs.dataRoot, UPLOADS_DIRECTORY);
 app.use(multer({ dest: uploadsPath, limits: { fieldSize: 500 * 1024 * 1024 } }).single('avatar'));
@@ -315,6 +294,7 @@ async function preSetupTasks() {
     const directories = await getUserDirectoriesList();
     await migrateGroupChatsMetadataFormat(directories);
     await checkForNewContent(directories);
+    await ensureThumbnailCache(directories);
     await diskCache.verify(directories);
     migrateFlatSecrets(directories);
     cleanUploads();
@@ -322,9 +302,6 @@ async function preSetupTasks() {
 
     await settingsInit();
     await statsInit();
-
-    // Initialize image metadata
-    await initializeAllUserMetadata(directories);
 
     const pluginsDirectory = path.join(serverDirectory, 'plugins');
     const cleanupPlugins = await loadPlugins(app, pluginsDirectory);
@@ -396,28 +373,6 @@ async function postSetupTasks(result) {
         }
     }
 
-    if (cliArgs.heartbeatInterval > 0) {
-        // Convert seconds to milliseconds for the timer
-        const intervalMs = cliArgs.heartbeatInterval * 1000;
-        const heartbeatPath = path.join(globalThis.DATA_ROOT, 'heartbeat.json');
-
-        console.log(`Heartbeat enabled. Updating ${color.green(heartbeatPath)} every ${cliArgs.heartbeatInterval} seconds`);
-
-        const writeHeartbeat = () => {
-            try {
-                fs.writeFileSync(heartbeatPath, JSON.stringify({ timestamp: Date.now() }));
-            } catch (err) {
-                console.error(`Failed to write heartbeat file at ${color.green(heartbeatPath)}:`, err.message);
-            }
-        };
-
-        // Write immediately
-        writeHeartbeat();
-
-        // Loop using the converted milliseconds
-        setInterval(writeHeartbeat, intervalMs).unref();
-    }
-
     setWindowTitle('SillyTavern WebServer');
 
     let logListen = 'SillyTavern is listening on';
@@ -449,6 +404,10 @@ async function postSetupTasks(result) {
 
     setupLogLevel();
     serverEvents.emit(EVENT_NAMES.SERVER_STARTED, { url: browserLaunchUrl });
+
+    if (globalThis.__COMPILED__ && process.platform === 'android') {
+        notifyLaunched();
+    }
 }
 
 /**

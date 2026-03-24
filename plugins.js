@@ -8,7 +8,8 @@ import path from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 
-import { default as git, CheckRepoActions } from 'simple-git';
+import * as git from 'isomorphic-git';
+import http from 'isomorphic-git/http/node/index.cjs';
 import { color } from './src/util.js';
 
 const __dirname = import.meta.dirname ?? path.dirname(fileURLToPath(import.meta.url));
@@ -47,29 +48,37 @@ async function updatePlugins() {
         try {
             console.log(`Updating plugin ${color.green(directory)}...`);
             const pluginPath = path.join(pluginsPath, directory);
-            const pluginRepo = git(pluginPath);
 
-            const isRepo = await pluginRepo.checkIsRepo(CheckRepoActions.IS_REPO_ROOT);
+            // Check if it's a git repository
+            const isRepo = await git.resolveRef({ fs, dir: pluginPath, ref: 'HEAD' })
+                .then(() => true)
+                .catch(() => false);
             if (!isRepo) {
                 console.log(`Directory ${color.yellow(directory)} is not a Git repository`);
                 continue;
             }
 
-            await pluginRepo.fetch();
-            const commitHash = await pluginRepo.revparse(['HEAD']);
-            const trackingBranch = await pluginRepo.revparse(['--abbrev-ref', '@{u}']);
-            const log = await pluginRepo.log({
-                from: commitHash,
-                to: trackingBranch,
-            });
+            await git.fetch({ fs, http, dir: pluginPath, remote: 'origin' });
+            const commitHash = await git.resolveRef({ fs, dir: pluginPath, ref: 'HEAD' });
+            const currentBranchName = await git.currentBranch({ fs, dir: pluginPath, fullname: false });
+            const trackingBranch = `origin/${currentBranchName}`;
 
-            if (log.total === 0) {
+            // Get commits between current and remote
+            const commits = await git.log({ fs, dir: pluginPath, ref: trackingBranch });
+
+            const betweenCommits = [];
+            for (const commit of commits) {
+                if (commit.oid === commitHash) break;
+                betweenCommits.push(commit);
+            }
+
+            if (betweenCommits.length === 0) {
                 console.log(`Plugin ${color.blue(directory)} is already up to date`);
                 continue;
             }
 
-            await pluginRepo.pull();
-            const latestCommit = await pluginRepo.revparse(['HEAD']);
+            await git.fastForward({ fs, http, dir: pluginPath, ref: currentBranchName });
+            const latestCommit = await git.resolveRef({ fs, dir: pluginPath, ref: 'HEAD' });
             console.log(`Plugin ${color.green(directory)} updated to commit ${color.cyan(latestCommit)}`);
         } catch (error) {
             console.error(color.red(`Failed to update plugin ${directory}: ${error.message}`));
@@ -87,7 +96,14 @@ async function installPlugin(pluginName) {
             return console.log(color.yellow(`Directory already exists at ${pluginPath}`));
         }
 
-        await git().clone(pluginName, pluginPath, { '--depth': 1 });
+        await git.clone({
+            fs,
+            http,
+            dir: pluginPath,
+            url: pluginName,
+            depth: 1,
+            singleBranch: true,
+        });
         console.log(`Plugin ${color.green(pluginName)} installed to ${color.cyan(pluginPath)}`);
     }
     catch (error) {

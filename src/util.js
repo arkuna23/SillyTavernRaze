@@ -11,11 +11,9 @@ import crypto from 'node:crypto';
 import readline from 'node:readline';
 
 import yaml from 'yaml';
-import { sync as commandExistsSync } from 'command-exists';
 import _ from 'lodash';
 import yauzl from 'yauzl';
 import mime from 'mime-types';
-import { default as simpleGit } from 'simple-git';
 import chalk from 'chalk';
 import bytes from 'bytes';
 import {
@@ -26,6 +24,8 @@ import {
 import { serverDirectory } from './server-directory.js';
 import { sync as writeFileAtomicSync } from 'write-file-atomic';
 import { isFirefox } from './express-common.js';
+
+import * as git from 'isomorphic-git';
 
 /**
  * Parsed config object.
@@ -54,7 +54,13 @@ export function setConfigFilePath(configFilePath) {
             ),
         );
     }
-    CONFIG_PATH = path.resolve(configFilePath);
+
+    if (globalThis.__COMPILED__) {
+        process.chdir(serverDirectory)
+        CONFIG_PATH = path.resolve(configFilePath);
+    } else {
+        CONFIG_PATH = path.resolve(configFilePath);
+    }
 }
 
 /**
@@ -74,14 +80,20 @@ export function getConfig() {
     if (CACHED_CONFIG) {
         return CACHED_CONFIG;
     }
+
     if (!fs.existsSync(CONFIG_PATH)) {
-        console.error(
-            color.red(
-                'No config file found. Please create a config.yaml file. The default config file can be found in the /default folder.',
-            ),
-        );
-        console.error(color.red('The program will now exit.'));
-        process.exit(1);
+        if (globalThis.__COMPILED__) {
+            console.warn("config path:", CONFIG_PATH)
+            process.chdir(serverDirectory)
+        } else {
+            console.error(
+                color.red(
+                    'No config file found. Please create a config.yaml file. The default config file can be found in the /default folder.',
+                ),
+            );
+            console.error(color.red('The program will now exit.'));
+            process.exit(1);
+        }
     }
 
     try {
@@ -156,6 +168,12 @@ export function getBasicAuthHeader(auth) {
 
 let _version = undefined;
 
+
+// 假设这些变量在外部定义，如原代码所示
+// let _version;
+// const serverDirectory = ...;
+
+
 /**
  * Returns the version of the running instance. Get the version from the package.json file and the git revision.
  * Also returns the agent string for the Horde API.
@@ -176,18 +194,43 @@ export async function getVersion() {
         const require = createRequire(import.meta.url);
         const pkgJson = require(path.join(serverDirectory, './package.json'));
         pkgVersion = pkgJson.version;
-        if (commandExistsSync('git')) {
-            const git = simpleGit({ baseDir: serverDirectory });
-            gitRevision = await git.revparse(['--short', 'HEAD']);
-            gitBranch = await git.revparse(['--abbrev-ref', 'HEAD']);
-            commitDate = await git.show(['-s', '--format=%ci', gitRevision]);
 
-            const trackingBranch = await git.revparse(['--abbrev-ref', '@{u}']);
+        if (fs.existsSync(path.join(serverDirectory, '.git'))) {
+            const dir = serverDirectory;
 
-            // Might fail, but exception is caught. Just don't run anything relevant after in this block...
-            const localLatest = await git.revparse(['HEAD']);
-            const remoteLatest = await git.revparse([trackingBranch]);
-            isLatest = localLatest === remoteLatest;
+            // 获取 HEAD 哈希
+            const sha = await git.resolveRef({ fs, dir, ref: 'HEAD' });
+            gitRevision = sha.substring(0, 7);
+
+            // 获取分支名
+            const branch = await git.currentBranch({ fs, dir, fullname: false });
+            gitBranch = branch || 'DETACHED';
+
+            // 获取提交日期
+            const commit = await git.readCommit({ fs, dir, oid: sha });
+            const date = new Date(commit.commit.committer.timestamp * 1000);
+            commitDate = date.toISOString().replace('T', ' ').replace(/\..+/, '');
+
+            // 替换 getRemoteTrackingBranch 的逻辑
+            try {
+                if (branch) {
+                    // 获取该分支关联的远程仓库名 (例如 'origin')
+                    const remote = await git.getConfig({ fs, dir, path: `branch.${branch}.remote` });
+                    // 获取远程分支名 (例如 'refs/heads/main')
+                    const merge = await git.getConfig({ fs, dir, path: `branch.${branch}.merge` });
+
+                    if (remote && merge) {
+                        // 构造远程追踪引用的路径 (例如 'refs/remotes/origin/main')
+                        const remoteRef = merge.replace('refs/heads/', `refs/remotes/${remote}/`);
+                        
+                        const localLatest = sha;
+                        const remoteLatest = await git.resolveRef({ fs, dir, ref: remoteRef });
+                        isLatest = localLatest === remoteLatest;
+                    }
+                }
+            } catch {
+                // 忽略追踪分支失败
+            }
         }
     } catch {
         // suppress exception

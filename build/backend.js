@@ -26,14 +26,10 @@ async function setupNodeRuntime(distDir) {
     // Everything related to node download/extraction goes here
     const nodeCacheDir = join(distDir, '_node');
     const finalNodeFile =
-        platform === 'win32'
-            ? join(distDir, 'node.exe')
-            : join(distDir, 'node');
+		platform === 'win32' ? join(distDir, 'node.exe') : join(distDir, 'node');
 
     if (fs.existsSync(finalNodeFile)) {
-        console.log(
-            '>> Node executable already exists, skipping runtime setup.',
-        );
+        console.log('>> Node executable already exists, skipping runtime setup.');
         return;
     }
 
@@ -55,9 +51,7 @@ async function setupNodeRuntime(distDir) {
 
     // 1. Download if not in dist/_node
     if (!fs.existsSync(cachedArchivePath)) {
-        console.log(
-            `>> Downloading Node.js ${NODE_VERSION} to ${nodeCacheDir}...`,
-        );
+        console.log(`>> Downloading Node.js ${NODE_VERSION} to ${nodeCacheDir}...`);
         if (platform === 'win32') {
             execSync(
                 `powershell -Command "Invoke-WebRequest -Uri '${downloadUrl}' -OutFile '${cachedArchivePath}'"`,
@@ -95,12 +89,12 @@ async function setupNodeRuntime(distDir) {
         .find(
             (f) =>
                 f.startsWith('node-') &&
-                fs.statSync(join(nodeCacheDir, f)).isDirectory(),
+				fs.statSync(join(nodeCacheDir, f)).isDirectory(),
         );
     const sourceExecPath =
-        platform === 'win32'
-            ? join(nodeCacheDir, extractedRoot, 'node.exe')
-            : join(nodeCacheDir, extractedRoot, 'bin', 'node');
+		platform === 'win32'
+		    ? join(nodeCacheDir, extractedRoot, 'node.exe')
+		    : join(nodeCacheDir, extractedRoot, 'bin', 'node');
 
     if (fs.existsSync(sourceExecPath)) {
         fs.copyFileSync(sourceExecPath, finalNodeFile);
@@ -128,7 +122,7 @@ function copyRecursive(src, dest) {
     }
 }
 
-async function build() {
+export async function build() {
     console.log('--- Starting Portable Build Process ---');
 
     const distDir = join(PROJECT_ROOT, 'dist');
@@ -138,7 +132,7 @@ async function build() {
     if (!fs.existsSync(distDir)) fs.mkdirSync(distDir, { recursive: true });
 
     // 1. Runtime Setup
-    await setupNodeRuntime(distDir);
+    if (!globalThis.IS_PACK_MODE) await setupNodeRuntime(distDir);
 
     // 2. Dependency Analysis
     const analysis = await esbuild.build({
@@ -174,7 +168,7 @@ async function build() {
     // 3. Bundle App
     console.log('>> Bundling application...');
     await esbuild.build({
-        entryPoints: ['server.js'],
+        entryPoints: ['entry.js'],
         bundle: true,
         platform: 'node',
         target: 'node18',
@@ -226,11 +220,27 @@ async function build() {
         }
     }
 
-    // 5.5 Generate minimal package.json in dist
+    // 5.5 Copy tokenizers directory
+    console.log('>> Copying src/tokenizers to dist...');
+    const tokenizersSource = join(PROJECT_ROOT, 'src', 'tokenizers');
+    const tokenizersDestDir = join(distDir, 'src');
+    const tokenizersDest = join(tokenizersDestDir, 'tokenizers');
+
+    if (fs.existsSync(tokenizersSource)) {
+        if (!fs.existsSync(tokenizersDestDir)) {
+            fs.mkdirSync(tokenizersDestDir, { recursive: true });
+        }
+        copyRecursive(tokenizersSource, tokenizersDest);
+        console.log('   [Done] Tokenizers copied successfully.');
+    } else {
+        console.warn('   [Warning] src/tokenizers directory not found.');
+    }
+
+    // 5.6 Generate minimal package.json in dist
     console.log(`>> Generating dist/package.json (v${PROJECT_VERSION})...`);
     const minimalPkg = {
-        name: rootPkg.name || 'portable-app', // 建议同时保留名称
-        version: PROJECT_VERSION, // 设定为项目的版本号
+        name: rootPkg.name || 'portable-app',
+        version: PROJECT_VERSION,
         type: 'module',
     };
     fs.writeFileSync(
@@ -250,17 +260,16 @@ async function build() {
         );
     } else {
         const shPath = join(distDir, 'start.sh');
-        fs.writeFileSync(
-            shPath,
-            `#!/bin/bash\ncd "$(dirname "$0")"\n${command}`,
-        );
+        fs.writeFileSync(shPath, `#!/bin/bash\ncd "$(dirname "$0")"\n${command}`);
         fs.chmodSync(shPath, '755');
     }
 
     console.log('--- Build Complete! ---');
 }
 
-await build().catch((err) => {
-    console.error('!! Fatal Error:', err);
-    process.exit(1);
-});
+if (process.argv[1] === fileURLToPath(import.meta.url)) {
+    await build().catch((err) => {
+        console.error('!! Fatal Error:', err);
+        process.exit(1);
+    });
+}

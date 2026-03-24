@@ -19,7 +19,8 @@ globalThis.fetch = async (/** @type {string | URL | Request} */ request, /** @ty
     const url = getRequestURL(request);
     const filePath = path.resolve(fileURLToPath(url));
     const isUnderServerDirectory = isPathUnderParent(serverDirectory, filePath);
-    if (!isUnderServerDirectory) {
+    if (!globalThis.__COMPILED__ && !isUnderServerDirectory) {
+        console.log("compiled: ", globalThis.__COMPILED__, serverDirectory, filePath)
         throw new Error('Requested file path is outside of the server directory.');
     }
     const parsedPath = path.parse(filePath);
