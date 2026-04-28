@@ -59,3 +59,4 @@ public/scripts/extensions/third-party
 *.code-workspace
 test-results/
 yarn.lock
+.codex

@@ -55,9 +55,44 @@ jobs:
           retention-days: 7
           if-no-files-found: error
 
+  build-split:
+    name: Build split packages
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build split distribution
+        run: npm run build:split
+        env:
+          NODE_ENV: production
+
+      - name: Upload split artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: sillytavern-split
+          path: |
+            dist/node_modules.zip
+            dist/webpage.zip
+            dist/server.zip
+            dist/version.json
+          retention-days: 7
+          if-no-files-found: error
+
   create-prerelease:
     name: Create Prerelease
-    needs: build
+    needs:
+      - build
+      - build-split
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
@@ -86,6 +121,7 @@ jobs:
         run: |
           mkdir -p release-files
           find artifacts/ -type f \( -name "*.zip" -o -name "*.tar.gz" \) -exec cp {} release-files/ \;
+          find artifacts/ -type f -name "version.json" -exec cp {} release-files/ \;
           ls -lh release-files/
 
       - name: Generate release notes
@@ -108,6 +144,13 @@ jobs:
           - **Linux x64**: \`sillytavern_linux_x64.tar.gz\`
           - **Windows x64**: \`sillytavern_win32_x64.zip\`
           - **macOS Apple Silicon (ARM64)**: \`sillytavern_darwin_arm64.tar.gz\`
+
+          ### 📦 Split Packages
+
+          - **Server package**: \`server.zip\`
+          - **Web package**: \`webpage.zip\`
+          - **Node modules package**: \`node_modules.zip\`
+          - **Version manifest**: \`version.json\`
 
           ### ⚠️ Warning
 
