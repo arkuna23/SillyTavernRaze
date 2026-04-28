@@ -5,29 +5,36 @@ import os from 'node:os';
 import * as fflate from 'fflate';
 import fsAsync from 'node:fs/promises';
 import * as tar from 'tar';
+import { getBuildVersion, hashFile } from './utils.js';
 
 // --- 1. 处理参数 ---
 const args = process.argv.slice(2);
 globalThis.IS_PACK_MODE = args.includes('--pack');
+globalThis.IS_SPLIT_MODE = args.includes('--split');
 const IS_PACK_MODE = globalThis.IS_PACK_MODE;
+const IS_SPLIT_MODE = globalThis.IS_SPLIT_MODE;
 
 const DIST_DIR = path.join(serverDirectory, 'dist');
 const PLATFORM = os.platform();
 const ARCH = os.arch();
 const IS_WIN = PLATFORM === 'win32';
 
-const EXT = (IS_PACK_MODE || IS_WIN) ? 'zip' : 'tar.gz';
+const EXT = IS_PACK_MODE || IS_WIN ? 'zip' : 'tar.gz';
 
 const ARCHIVE_NAME = `silly_tavern_${PLATFORM}_${ARCH}${IS_PACK_MODE ? '_packed' : ''}.${EXT}`;
-const ARCHIVE_PATH = IS_PACK_MODE ? path.join(DIST_DIR, `silly_tavern.${EXT}`) : path.join(DIST_DIR, ARCHIVE_NAME);
+const ARCHIVE_PATH = IS_PACK_MODE
+    ? path.join(DIST_DIR, `silly_tavern.${EXT}`)
+    : path.join(DIST_DIR, ARCHIVE_NAME);
 
-console.log(`🚀 Starting Build Process... ${IS_PACK_MODE ? '(PACK MODE)' : ''}`);
+console.log(
+    `🚀 Starting Build Process... ${IS_PACK_MODE ? '(PACK MODE)' : ''}`,
+);
 
 console.log('🔨 Building backend...');
-await import('./backend.js').then(pkg => pkg.build());
+await import('./backend.js').then((pkg) => pkg.build());
 
 console.log('🎨 Building frontend...');
-await import('./frontend.js').then(pkg => pkg.build());
+await import('./frontend.js').then((pkg) => pkg.build());
 
 console.log('📂 Copying default files...');
 const srcDefault = path.join(serverDirectory, 'default');
@@ -38,10 +45,14 @@ console.log('🗄️ Creating data directory...');
 await fs.mkdir(path.join(DIST_DIR, 'data'), { recursive: true });
 
 const shouldExclude = (fileName) => {
-    if (fileName.startsWith('_') || fileName.endsWith('.zip') || fileName.endsWith('.tar.gz')) {
+    if (
+        fileName.startsWith('_') ||
+		fileName.endsWith('.zip') ||
+		fileName.endsWith('.tar.gz')
+    ) {
         return true;
     }
-    if (IS_PACK_MODE) {
+    if (IS_PACK_MODE || IS_SPLIT_MODE) {
         const excludes = ['node', 'node.exe', 'start.sh', 'start.bat'];
         if (excludes.includes(fileName)) return true;
     }
@@ -50,55 +61,59 @@ const shouldExclude = (fileName) => {
 
 console.log(`🗜️ Archiving via API into ${EXT}...`);
 
-if (IS_WIN || IS_PACK_MODE) {
-    console.log('\tGenerating ZIP archive...');
-    const zipData = {};
+async function scanZip({
+    zipData = {},
+    dir = '',
+    fromDir = DIST_DIR,
+    exclude = true,
+    depth = 0,
+} = {}) {
+    const entries = await fsAsync.readdir(dir, { withFileTypes: true });
 
-    async function scan(dir, depth = 0) {
-        const entries = await fsAsync.readdir(dir, { withFileTypes: true });
-
-        if (entries.length === 0) {
-            const relativePath = path.relative(DIST_DIR, dir);
-            if (relativePath) {
-                const zipEntryName = relativePath.split(path.sep).join('/') + '/';
-                zipData[zipEntryName] = new Uint8Array(0);
-            }
-            return;
+    if (entries.length === 0) {
+        const relativePath = path.relative(DIST_DIR, dir);
+        if (relativePath) {
+            const zipEntryName = relativePath.split(path.sep).join('/') + '/';
+            zipData[zipEntryName] = new Uint8Array(0);
         }
-
-        for (const entry of entries) {
-            // 排除逻辑
-            if (depth === 0 && shouldExclude(entry.name)) {
-                continue;
-            }
-
-            const fullPath = path.join(dir, entry.name);
-            const relativePath = path.relative(DIST_DIR, fullPath);
-            const zipEntryName = relativePath.split(path.sep).join('/');
-
-            if (entry.isDirectory()) {
-                await scan(fullPath, depth + 1);
-            } else {
-                zipData[zipEntryName] = new Uint8Array(
-                    await fsAsync.readFile(fullPath),
-                );
-            }
-        }
+        return;
     }
 
-    await scan(DIST_DIR);
+    for (const entry of entries) {
+        // 排除逻辑
+        if (depth === 0 && exclude && shouldExclude(entry.name)) {
+            continue;
+        }
+
+        const fullPath = path.join(dir, entry.name);
+        const relativePath = path.relative(fromDir, fullPath);
+        const zipEntryName = relativePath.split(path.sep).join('/');
+
+        if (entry.isDirectory()) {
+            await scanZip({ zipData, dir: fullPath, exclude, depth: depth + 1 });
+        } else {
+            zipData[zipEntryName] = new Uint8Array(await fsAsync.readFile(fullPath));
+        }
+    }
+}
+
+async function createZip(archivePath, dir, zipData = {}) {
+    if (dir) {
+        await scanZip({
+            zipData,
+            dir,
+        });
+    }
     const zipped = fflate.zipSync(zipData, { level: 6 });
-    await fs.writeFile(ARCHIVE_PATH, zipped);
+    await fs.writeFile(archivePath, zipped);
+}
 
-} else {
-    // 非 pack 模式下的 Linux/macOS 走 TAR 逻辑
-    console.log('\tGenerating TAR.GZ archive for Linux/macOS...');
-
+async function createTar(archivePath, cwd) {
     await tar.create(
         {
             gzip: true,
-            file: ARCHIVE_PATH,
-            cwd: DIST_DIR,
+            file: archivePath,
+            cwd,
             filter: (filePath) => {
                 const relativePath = filePath.replace(/^\.?\//, '');
                 const rootName = relativePath.split('/')[0];
@@ -109,4 +124,77 @@ if (IS_WIN || IS_PACK_MODE) {
     );
 }
 
-console.log(`✅ Build completed: ${ARCHIVE_PATH}`);
+async function writeSplitVersionManifest() {
+    const packages = {
+        node_modules: 'node_modules.zip',
+        webpage: 'webpage.zip',
+        server: 'server.zip',
+    };
+    const manifest = {
+        version: getBuildVersion(),
+        hashAlgorithm: 'sha256',
+        packages: {},
+    };
+
+    for (const [name, fileName] of Object.entries(packages)) {
+        manifest.packages[name] = {
+            file: fileName,
+            hash: hashFile(path.join(DIST_DIR, fileName)),
+        };
+    }
+
+    await fs.writeFile(
+        path.join(DIST_DIR, 'version.json'),
+        `${JSON.stringify(manifest, null, 2)}\n`,
+    );
+}
+
+if (IS_SPLIT_MODE) {
+    console.log('\tGenerating split packages...');
+
+    console.log('\tGenerating node_modules package...');
+    await createZip(
+        path.join(DIST_DIR, 'node_modules.zip'),
+        path.join(DIST_DIR, 'node_modules'),
+    );
+
+    console.log('\tGenerating webpage package...');
+    await createZip(
+        path.join(DIST_DIR, 'webpage.zip'),
+        path.join(DIST_DIR, 'public'),
+    );
+
+    console.log('\tGenerating server package...');
+    const zipData = {};
+    const files = ['app.js', 'app.js.map', 'package.json'];
+    const dirs = ['data', 'default', 'src'];
+
+    for (const file of files) {
+        zipData[file] = new Uint8Array(
+            await fsAsync.readFile(path.join(DIST_DIR, file)),
+        );
+    }
+    for (const dir of dirs) {
+        await scanZip({
+            zipData,
+            dir: path.join(DIST_DIR, dir),
+        });
+    }
+    await createZip(path.join(DIST_DIR, 'server.zip'), null, zipData);
+
+    console.log('\tGenerating version manifest...');
+    await writeSplitVersionManifest();
+
+    console.log('✅ Build completed: split packages.');
+} else if (IS_WIN || IS_PACK_MODE) {
+    console.log('\tGenerating ZIP archive...');
+
+    await createZip(ARCHIVE_PATH, DIST_DIR);
+    console.log(`✅ Build completed: ${ARCHIVE_PATH}`);
+} else {
+    // 非 pack 模式下的 Linux/macOS 走 TAR 逻辑
+    console.log('\tGenerating TAR.GZ archive for Linux/macOS...');
+    await createTar(ARCHIVE_PATH, DIST_DIR);
+
+    console.log(`✅ Build completed: ${ARCHIVE_PATH}`);
+}
