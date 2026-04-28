@@ -1621,7 +1621,7 @@ async function checkForUpdatesManual(sortFn, abortSignal) {
                     }
 
                     const versionElement = extensionBlock.querySelector('.extension_version');
-                    if (versionElement) {
+                    if (versionElement && branch && commitHash) {
                         versionElement.textContent += ` (${branch}-${commitHash.substring(0, 7)})`;
                     }
                 }

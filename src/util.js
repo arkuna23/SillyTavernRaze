@@ -184,35 +184,37 @@ export async function getVersion() {
         return _version;
     }
 
-    let pkgVersion = 'UNKNOWN';
-    let gitRevision = 'UNKNOWN';
-    let gitBranch = 'UNKNOWN';
-    let commitDate = 'UNKNOWN';
+    let pkgVersion = '0.0.0';
+    let gitRevision = null;
+    let gitBranch = null;
+    let commitDate = null;
     let isLatest = true;
 
     try {
         const require = createRequire(import.meta.url);
         const pkgJson = require(path.join(serverDirectory, './package.json'));
-        pkgVersion = pkgJson.version;
+        pkgVersion = pkgJson.version || pkgVersion;
+        gitRevision = pkgJson.gitRevision || null;
+        gitBranch = pkgJson.gitBranch || null;
+        commitDate = pkgJson.commitDate || null;
 
         if (fs.existsSync(path.join(serverDirectory, '.git'))) {
             const dir = serverDirectory;
 
-            // 获取 HEAD 哈希
-            const sha = await git.resolveRef({ fs, dir, ref: 'HEAD' });
-            gitRevision = sha.substring(0, 7);
-
-            // 获取分支名
-            const branch = await git.currentBranch({ fs, dir, fullname: false });
-            gitBranch = branch || 'DETACHED';
-
-            // 获取提交日期
-            const commit = await git.readCommit({ fs, dir, oid: sha });
-            const date = new Date(commit.commit.committer.timestamp * 1000);
-            commitDate = date.toISOString().replace('T', ' ').replace(/\..+/, '');
-
-            // 替换 getRemoteTrackingBranch 的逻辑
             try {
+                // 获取 HEAD 哈希
+                const sha = await git.resolveRef({ fs, dir, ref: 'HEAD' });
+                gitRevision = sha.substring(0, 7);
+
+                // 获取分支名
+                const branch = await git.currentBranch({ fs, dir, fullname: false });
+                gitBranch = branch || 'DETACHED';
+
+                // 获取提交日期
+                const commit = await git.readCommit({ fs, dir, oid: sha });
+                const date = new Date(commit.commit.committer.timestamp * 1000);
+                commitDate = date.toISOString().replace('T', ' ').replace(/\..+/, '');
+
                 if (branch) {
                     // 获取该分支关联的远程仓库名 (例如 'origin')
                     const remote = await git.getConfig({ fs, dir, path: `branch.${branch}.remote` });
@@ -229,7 +231,7 @@ export async function getVersion() {
                     }
                 }
             } catch {
-                // 忽略追踪分支失败
+                // Keep package.json build metadata when git data is unavailable.
             }
         }
     } catch {

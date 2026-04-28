@@ -178,11 +178,18 @@ router.post('/update', async (request, response) => {
             return response.status(404).send(`Directory does not exist at ${extensionPath}`);
         }
 
-        const { isUpToDate, remoteUrl } = await checkIfRepoIsUpToDate(extensionPath);
         const isRepo = await isGitRepo(extensionPath);
         if (!isRepo) {
-            throw new Error(`Directory is not a Git repository at ${extensionPath}`);
+            console.info(`Skipping extension update for non-git directory at ${extensionPath}`);
+            return response.send({
+                shortCommitHash: '',
+                extensionPath,
+                isUpToDate: true,
+                remoteUrl: '',
+                skipped: true,
+            });
         }
+        const { isUpToDate, remoteUrl } = await checkIfRepoIsUpToDate(extensionPath);
         const currentBranchName = await git.currentBranch({ fs, dir: extensionPath, fullname: false });
         if (!isUpToDate) {
             await git.fastForward({ fs, http, dir: extensionPath, ref: currentBranchName });

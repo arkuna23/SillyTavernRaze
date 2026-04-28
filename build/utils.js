@@ -7,6 +7,19 @@ import { fileURLToPath } from 'node:url';
 const BUILD_DIR = path.dirname(fileURLToPath(import.meta.url));
 const PROJECT_ROOT = path.resolve(BUILD_DIR, '..');
 
+function runGit(args) {
+    const result = spawnSync('git', args, {
+        cwd: PROJECT_ROOT,
+        encoding: 'utf8',
+    });
+
+    if (result.status !== 0) {
+        return null;
+    }
+
+    return result.stdout?.trim() || null;
+}
+
 function normalizePath(filePath) {
     return filePath.split(path.sep).join('/');
 }
@@ -81,24 +94,24 @@ export function hashEntries(rootDir, entries = []) {
 }
 
 export function getBuildVersion() {
+    const buildInfo = getBuildInfo();
+    return buildInfo.buildVersion;
+}
+
+export function getBuildInfo() {
     const rootPkg = JSON.parse(
         fs.readFileSync(path.join(PROJECT_ROOT, 'package.json'), 'utf8'),
     );
     const version = rootPkg.version || '0.0.0';
+    const gitRevision = runGit(['rev-parse', '--short=7', 'HEAD']);
+    const gitBranch = runGit(['rev-parse', '--abbrev-ref', 'HEAD']);
+    const commitDate = runGit(['show', '-s', '--format=%cI', 'HEAD']);
 
-    let shortSha = 'unknown';
-    try {
-        const result = spawnSync('git', ['rev-parse', '--short=7', 'HEAD'], {
-            cwd: PROJECT_ROOT,
-            encoding: 'utf8',
-        });
-        const stdout = result.stdout?.trim();
-        if (stdout) {
-            shortSha = stdout;
-        }
-    } catch {
-        // Keep builds working outside a git checkout.
-    }
-
-    return `v${version}-dev.${shortSha}`;
+    return {
+        version,
+        gitRevision,
+        gitBranch: gitBranch === 'HEAD' ? 'DETACHED' : gitBranch,
+        commitDate,
+        buildVersion: gitRevision ? `v${version}-dev.${gitRevision}` : `v${version}`,
+    };
 }

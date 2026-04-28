@@ -4,6 +4,7 @@ import path, { dirname, join } from "path";
 import fs from "fs";
 import modclean from "modclean";
 import { execSync } from "child_process";
+import { getBuildInfo } from "./utils.js";
 
 // --- Configuration & Helpers ---
 const __filename = fileURLToPath(import.meta.url);
@@ -13,7 +14,8 @@ const NODE_VERSION = "v18.18.2";
 
 const rootPkgPath = join(PROJECT_ROOT, "package.json");
 const rootPkg = JSON.parse(fs.readFileSync(rootPkgPath, "utf-8"));
-const PROJECT_VERSION = rootPkg.version || "1.0.0";
+const BUILD_INFO = getBuildInfo();
+const PROJECT_VERSION = rootPkg.version || BUILD_INFO.version || "1.0.0";
 
 /**
  * Downloads and extracts the Node executable.
@@ -250,6 +252,10 @@ export async function build() {
         name: rootPkg.name || "portable-app",
         version: PROJECT_VERSION,
         type: "module",
+        gitRevision: BUILD_INFO.gitRevision,
+        gitBranch: BUILD_INFO.gitBranch,
+        commitDate: BUILD_INFO.commitDate,
+        buildVersion: BUILD_INFO.buildVersion,
     };
     fs.writeFileSync(
         join(distDir, "package.json"),
