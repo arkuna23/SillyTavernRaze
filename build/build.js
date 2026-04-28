@@ -21,9 +21,9 @@ const IS_WIN = PLATFORM === 'win32';
 
 const EXT = IS_PACK_MODE || IS_WIN ? 'zip' : 'tar.gz';
 
-const ARCHIVE_NAME = `silly_tavern_${PLATFORM}_${ARCH}${IS_PACK_MODE ? '_packed' : ''}.${EXT}`;
+const ARCHIVE_NAME = `sillytavern_${PLATFORM}_${ARCH}${IS_PACK_MODE ? '_packed' : ''}.${EXT}`;
 const ARCHIVE_PATH = IS_PACK_MODE
-    ? path.join(DIST_DIR, `silly_tavern.${EXT}`)
+    ? path.join(DIST_DIR, `sillytavern.${EXT}`)
     : path.join(DIST_DIR, ARCHIVE_NAME);
 
 console.log(
@@ -149,6 +149,19 @@ async function writeSplitVersionManifest() {
     );
 }
 
+async function addFileToZip(zipData, fileName, { optional = false } = {}) {
+    try {
+        zipData[fileName] = new Uint8Array(
+            await fsAsync.readFile(path.join(DIST_DIR, fileName)),
+        );
+    } catch (error) {
+        if (optional && error?.code === 'ENOENT') {
+            return;
+        }
+        throw error;
+    }
+}
+
 if (IS_SPLIT_MODE) {
     console.log('\tGenerating split packages...');
 
@@ -166,13 +179,15 @@ if (IS_SPLIT_MODE) {
 
     console.log('\tGenerating server package...');
     const zipData = {};
-    const files = ['app.js', 'app.js.map', 'package.json'];
+    const files = ['app.js', 'package.json'];
+    const optionalFiles = ['app.js.map'];
     const dirs = ['data', 'default', 'src'];
 
     for (const file of files) {
-        zipData[file] = new Uint8Array(
-            await fsAsync.readFile(path.join(DIST_DIR, file)),
-        );
+        await addFileToZip(zipData, file);
+    }
+    for (const file of optionalFiles) {
+        await addFileToZip(zipData, file, { optional: true });
     }
     for (const dir of dirs) {
         await scanZip({
