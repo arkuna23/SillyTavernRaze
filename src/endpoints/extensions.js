@@ -102,6 +102,7 @@ router.post('/install', async (request, response) => {
     }
 
     try {
+
         // make sure the third-party directory exists
         if (!fs.existsSync(path.join(request.user.directories.extensions))) {
             fs.mkdirSync(path.join(request.user.directories.extensions));
@@ -137,8 +138,9 @@ router.post('/install', async (request, response) => {
         console.info(`Extension has been cloned to ${extensionPath} from ${url} at ${branch || '(default)'} branch`);
 
         const { version, author, display_name } = await getManifest(extensionPath);
+        const folderName = path.basename(extensionPath);
 
-        return response.send({ version, author, display_name, extensionPath });
+        return response.send({ version, author, display_name, extensionPath, folderName });
     } catch (error) {
         console.error('Importing custom content failed', error);
         return response.status(500).send(`Server Error: ${error.message}`);
@@ -409,7 +411,6 @@ router.post('/version', async (request, response) => {
         const { isUpToDate, remoteUrl } = await checkIfRepoIsUpToDate(extensionPath);
 
         return response.send({ currentBranchName, currentCommitHash, isUpToDate, remoteUrl });
-
     } catch (error) {
         console.error('Getting extension version failed', error);
         return response.status(500).send(`Server Error: ${error.message}`);
@@ -448,7 +449,6 @@ router.post('/delete', async (request, response) => {
         console.info(`Extension has been deleted at ${extensionPath}`);
 
         return response.send(`Extension has been deleted at ${extensionPath}`);
-
     } catch (error) {
         console.error('Deleting custom content failed', error);
         return response.status(500).send(`Server Error: ${error.message}`);
